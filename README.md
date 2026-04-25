@@ -18,7 +18,7 @@ VSCode 风的 Neovim 文件树，自实现，零第三方依赖
 - **VSCode 风单击预览**：`j/k` 即时换文件，`<CR>` 或编辑操作自动固定
 - **空目录折叠**（`group_empty_dirs`，单链 `a/b/c/` 合并显示）
 - **libuv fs_event 自动刷新**（150ms 防抖）
-- **`/` 全树模糊过滤**：fd 异步索引 + `matchfuzzypos` + 字符位置高亮 + 祖先链保持（fd 缺失走英文提示，不自动 fallback）
+- **`/` 全树过滤**：fd 异步索引 + 三种搜索模式（fuzzy / glob / regex，`<S-Tab>` 切换）+ 祖先链保持；prompt 内 `<C-n>/<C-p>` 跳 match、`<C-x>/<C-v>` 直开分屏（fd 缺失走英文提示，不自动 fallback）
 - **git 状态**：异步 `git status --porcelain -z --ignored` 索引，行尾显示 `A/U/M/D/R/C/!` 符号（颜色对齐 VSCode gitDecoration.*），`.gitignore` 命中的路径暗色；`I` 切换显隐
 - **LSP 诊断**：订阅 `DiagnosticChanged`，行尾显示 `E/W/I/H`（按最高 severity）
 - **暗色路径**：dotfile（`.` 开头）+ gitignored 路径用 `VVExplorerDim`（默认 link `Comment`）
@@ -167,12 +167,30 @@ require('vv-explorer').setup({
 
 ### 过滤
 
+tree 内：
+
 | 键 | 动作 |
 |---|---|
-| `/` | 底部浮动输入框，实时过滤全树 |
-| `<Esc>` | 关 filter（恢复正常视图） |
+| `/` | 打开底部双行浮动输入框（mode badge + 输入），空 query 不筛选 |
+| `<Esc>` / `q` | 关 filter（恢复正常视图） |
 
-索引用 fd 构建，`matchfuzzypos` 打分 + 字符位置高亮，祖先链保持可见
+filter prompt 内（i / n 模式都生效）：
+
+| 键 | 动作 |
+|---|---|
+| `<S-Tab>` | 切换搜索模式：fuzzy → glob → regex |
+| `<C-n>` / `<C-p>` | 跳到下/上一个 match（焦点不离 prompt，自动驱动预览） |
+| `<C-x>` / `<C-v>` | 以 split / vsplit 直接打开当前 match |
+| `<CR>` | 跳到首个 match（保留 filter 视图） |
+| `<Esc>` / `q` | 取消 filter |
+
+三种搜索模式：
+
+- **fuzzy**（默认）：`vim.fn.matchfuzzypos`，逐字位置高亮
+- **glob**：`vim.glob.to_lpeg`；query 不含 `/` 时自动跨段（`*.lua` ≡ `**/*.lua`，纯文本 `foo` ≡ `**/*foo*`）
+- **regex**：Lua pattern（`string.find`），错误 pattern 自动忽略
+
+索引用 fd 异步构建，祖先链保持可见，按 `R` 失效索引重建
 
 ## 自定义图标
 
@@ -208,6 +226,9 @@ require('vv-explorer').setup({
 | `VVExplorerDim` | `Comment` | dotfile / gitignored 暗色 |
 | `VVExplorerMatch` | `bg=#193d4c bold` | 过滤命中字符（逐字高亮：只改 bg，fg 透行色） |
 | `VVExplorerSelected` | `Visual` | 批量选中整行底色 |
+| `VVExplorerFilterModeFuzzy` | fg `#7dcfff` bold | filter prompt: fuzzy mode badge |
+| `VVExplorerFilterModeGlob` | fg `#e0af68` bold | filter prompt: glob mode badge |
+| `VVExplorerFilterModeRegex` | fg `#ff6ac1` bold | filter prompt: regex mode badge |
 | `VVGitAdded` | fg `#81b88b` | `A` staged added（VSCode 绿） |
 | `VVGitUntracked` | fg `#73c991` | `U` 未跟踪 `??`（VSCode 亮绿） |
 | `VVGitModified` | fg `#e2c08d` | `M` 修改（VSCode 黄） |
@@ -249,8 +270,8 @@ ft.is_open()
 | `render.lua` | 正常 / 过滤两条渲染路径，arrow/icon 槽位 `strdisplaywidth` 补齐；dim 判断 + 行尾 git/diag virt_text |
 | `actions.lua` | open/close/toggle_hidden/toggle_gitignored/refresh/cd/filter/help + 打开方式 + yank + CRUD + 剪贴板 + 选区 |
 | `preview.lua` | VSCode 风单击预览：CursorMoved + BufModifiedSet + find_main_win |
-| `filter.lua` | fd 异步索引 + `matchfuzzypos` + 祖先链集合 |
-| `prompt.lua` | 底部浮动 filter 输入框 + 实时过滤 + match count virt_text |
+| `filter.lua` | fd 异步索引 + 三模式（fuzzy/glob/regex）分发 + mode 元数据 + 祖先链集合 |
+| `prompt.lua` | 底部双行浮动输入框（mode badge + S-Tab 提示 overlay + placeholder + match 导航 + 直开分屏） |
 | `watch.lua` | `vim.uv.new_fs_event` + 150ms 防抖；同步触发 git 刷新 |
 | `window.lua` | split 创建 + buffer/window 选项（`bufhidden='hide'` 让 buf 跨 close/open 存活） |
 | `icons.lua` | 规则匹配（`vim.glob.to_lpeg` / Lua pattern）+ MiniIcons fallback |

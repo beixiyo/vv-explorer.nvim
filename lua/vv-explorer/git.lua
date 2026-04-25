@@ -45,41 +45,41 @@ function M.attach(state)
     end
   end
 
+  -- status（--ignored）一次拉取 + apply + 重画；可选 after 回调（用于 debounced caller 串行）
+  local function run_status(after)
+    UGit.index(state.root.path, function(idx)
+      apply(state, idx)
+      rerender()
+      if after then after() end
+    end)
+  end
+
+  -- tracked 一次拉取 + apply + 重画
+  local function run_tracked()
+    UGit.tracked(state.root.path, function(t)
+      apply_tracked(state, t)
+      rerender()
+    end)
+  end
+
   state.git.refresh = function(after)
     if not state.git then return end
     -- status (--ignored) 在 HOME-as-repo 这种大仓上可能要几秒，独立 debounce
     if state.git._timer then
       state.git._timer:stop()
-      state.git._timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(function()
-        UGit.index(state.root.path, function(idx)
-          apply(state, idx)
-          rerender()
-          if after then after() end
-        end)
-      end))
+      state.git._timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(function() run_status(after) end))
     end
     -- tracked 只读 .git/index，毫秒级；不能被慢的 status 拖，独立 debounce + render
     if state.git._tracked_timer then
       state.git._tracked_timer:stop()
-      state.git._tracked_timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(function()
-        UGit.tracked(state.root.path, function(t)
-          apply_tracked(state, t)
-          rerender()
-        end)
-      end))
+      state.git._tracked_timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(run_tracked))
     end
   end
 
-  -- 首次：两条线并行跑，各自完成各自重画。tracked 通常几十 ms 就回来，dotfile
-  -- 立刻可见；status 慢就慢，不影响 tracked dotfile 的早期可见性。
-  UGit.tracked(state.root.path, function(t)
-    apply_tracked(state, t)
-    rerender()
-  end)
-  UGit.index(state.root.path, function(idx)
-    apply(state, idx)
-    rerender()
-  end)
+  -- 首次：两条线并行跑，各自完成各自重画（不走 debounce，要立刻拉数据）。
+  -- tracked 通常几十 ms 就回来，dotfile 立刻可见；status 慢就慢，不影响 tracked dotfile 的早期可见性。
+  run_tracked()
+  run_status()
 end
 
 ---@param state table

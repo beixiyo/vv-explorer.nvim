@@ -93,7 +93,7 @@ local defaults = {
     ['-']     = 'cd_up',
     ['/']     = 'start_filter',
     ['<Esc>'] = 'escape', -- 优先级：filter > selection > 无操作
-    ['q']     = '__close',
+    ['q']     = '__quit',  -- filter 模式时清 filter，否则关树
     ['g?']    = 'help',
     -- 打开方式
     ['<C-x>'] = 'open_split',
@@ -135,6 +135,10 @@ local function register_highlights()
     -- 逐字匹配字符：底色同 bufferline 活动 tab (#193d4c)，bold 强调
     -- 只设 bg，fg 从下层 VVExplorerFile/Dir 透下来，不盖掉文件/目录原色
     VVExplorerMatch = { bg = '#193d4c', bold = true },
+    -- filter prompt mode badge：每个 mode 一个色，bold 突出
+    VVExplorerFilterModeFuzzy = { fg = '#7dcfff', bold = true }, -- 青蓝
+    VVExplorerFilterModeGlob  = { fg = '#e0af68', bold = true }, -- 橙
+    VVExplorerFilterModeRegex = { fg = '#ff6ac1', bold = true }, -- 粉（与 vv-replace 同色）
   })
 end
 
@@ -165,6 +169,12 @@ local function apply_keymaps(s)
       vim.keymap.set('n', lhs, function()
         if is_fn then return action(s) end
         if action == '__close' then return M.close() end
+        if action == '__quit' then
+          if s.filter and s.filter.active then
+            return Actions.clear_filter(s)
+          end
+          return M.close()
+        end
         local fn = Actions[action]
         if fn then fn(s) end
       end, { buffer = s.buf, nowait = true, silent = true, desc = desc })

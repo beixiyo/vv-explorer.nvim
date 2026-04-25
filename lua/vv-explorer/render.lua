@@ -149,7 +149,8 @@ end
 function M.render(state)
   if not state or not vim.api.nvim_buf_is_valid(state.buf) then return end
 
-  if state.filter and state.filter.active then
+  -- query 非空才进过滤渲染；空 query 保持普通树视图（"打开 / 不立刻筛掉一切"）
+  if state.filter and state.filter.active and (state.filter.query or '') ~= '' then
     return M.render_filter(state)
   end
 
@@ -236,14 +237,12 @@ end
 function M.render_filter(state)
   local f = state.filter
   local cwd = state.root.path
-  local matched_abs = f.matched and f.matched.abs or {}
+  local matched_abs = f.matched.abs
   local visible = Filter.visible_set(matched_abs, cwd)
 
   local positions_by_path = {}
-  if f.matched then
-    for i, rel in ipairs(f.matched.rels) do
-      positions_by_path[f.matched.abs[i]] = f.matched.positions[i]
-    end
+  for i = 1, #f.matched.rels do
+    positions_by_path[f.matched.abs[i]] = f.matched.positions[i]
   end
 
   local list = {}
