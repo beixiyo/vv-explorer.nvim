@@ -33,17 +33,28 @@ VSCode 风的 Neovim 文件树，自实现，零第三方依赖
 ## 依赖
 
 - Neovim 0.10+（`vim.uv` / `vim.fs` / `vim.glob` / `matchfuzzypos`）
-- 可选：[mini.icons](https://github.com/nvim-mini/mini.icons) —— 不装则走内置默认图标
+- 可选：[mini.icons](https://github.com/nvim-mini/mini.icons) —— 不装时所有文件统一显示 ``、目录 ``；装了则按 filetype / extension 渲染彩色图标
 - 可选：[`fd`](https://github.com/sharkdp/fd) —— `/` 过滤需要，缺失时提示安装
 
 ## 安装
 
-lazy.nvim：
+lazy.nvim（推荐同时装 mini.icons 获得彩色图标）：
 
 ```lua
 {
   'beixiyo/vv-explorer.nvim',
-  dependencies = { 'beixiyo/vv-utils.nvim' },
+  dependencies = {
+    'beixiyo/vv-utils.nvim',
+    -- 可选：彩色文件图标
+    {
+      'nvim-mini/mini.icons',
+      opts = {},
+      config = function(_, opts)
+        require('mini.icons').setup(opts)
+        MiniIcons.mock_nvim_web_devicons()  -- 让其它老插件也用同一份图标
+      end,
+    },
+  },
   keys = { '<leader>e', '<leader>E' },
   -- setup 空表就够：git / diagnostics / 全局键位 都默认开
   opts = {},
