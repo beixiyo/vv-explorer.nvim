@@ -9,6 +9,7 @@ local Preview = require('vv-explorer.preview')
 local Filter = require('vv-explorer.filter')
 local Prompt = require('vv-explorer.prompt')
 local Fs = require('vv-utils.fs')
+local Editor = require('vv-utils.editor')
 
 local M = {}
 
@@ -209,9 +210,7 @@ end
 function M.yank_abs_path(state)
   local node = M.node_under_cursor(state)
   if not node then return end
-  local abs = vim.fn.fnamemodify(node.path, ':p')
-  vim.fn.setreg('+', abs)
-  vim.notify('Copied: ' .. abs)
+  Editor.copy_path({ path = node.path, title = 'vv-explorer' })
 end
 
 -- 在主窗口执行打开命令（文件节点专用；目录走 open）
