@@ -477,7 +477,7 @@ function M.clear_selection(state)
   Render.render(state)
 end
 
--- <Esc> 的统一行为：filter > selection > 无操作
+-- <Esc> 的统一行为：filter > selection > close
 ---@param state table
 function M.escape(state)
   if state.filter and state.filter.active then
@@ -486,7 +486,9 @@ function M.escape(state)
   end
   if state.selection and next(state.selection) then
     M.clear_selection(state)
+    return
   end
+  require('vv-explorer').close()
 end
 
 -- ============ CRUD ============

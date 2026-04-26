@@ -16,6 +16,7 @@
 
 ### Changed
 
+- Update `<Esc>` (escape action): Close the explorer if no active filter or selection.
 - 空 query 时不进过滤渲染，保持普通树视图（"打开 / 不立刻筛掉一切"）
 - tree 内 `q` 在 filter 视图下清 filter，否则关树（之前总是关树）
 - `glob` 模式 query 不含 `/` 时自动跨段：`*.lua` ≡ `**/*.lua`，纯文本 `foo` ≡ `**/*foo*`（VSCode 风）
