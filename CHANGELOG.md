@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **perf**: HOME-as-repo 场景下 `git status --ignored` 递归扫全盘导致文件树卡 13s+，改用 `git ls-files --others --ignored --directory`（`--directory` 不递归进 ignored 目录，~20ms）
+
 ### Added
 
 - filter prompt 三种搜索模式（fuzzy / glob / regex），`<S-Tab>` 循环切换
