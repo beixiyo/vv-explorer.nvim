@@ -62,7 +62,7 @@ local function build_row_visual(opts)
   local icon_block = pad_to_cols(icon, ICON_SLOT_COLS)
 
   local name = opts.display_name
-  local line = prefix .. arrow_block .. icon_block .. ' ' .. name
+  local line = prefix .. arrow_block .. icon_block .. name
 
   -- dim：dotfile / gitignored → 整行（icon + name）走 VVExplorerDim
   local name_hl = opts.is_dir and 'VVExplorerDir' or 'VVExplorerFile'
@@ -89,7 +89,7 @@ local function build_row_visual(opts)
       opts = { end_col = col + #icon, hl_group = icon_hl },
     }
   end
-  col = col + #icon_block + 1
+  col = col + #icon_block
 
   extmarks[#extmarks + 1] = {
     col = col,
