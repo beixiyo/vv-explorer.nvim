@@ -42,7 +42,7 @@ local function pad_to_cols(s, cols)
 end
 
 ---@param opts {depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, path:string, match_positions?:integer[], basename_byte_offset?:integer, dim?:boolean, git_symbol?:{glyph:string,hl:string}, diag_symbol?:{glyph:string,hl:string}}
----@return string line, table[] extmarks  extmarks 不含 lnum，调用方负责 row 赋值
+---@return string line, table[] extmarks, integer name_col  extmarks 不含 lnum，调用方负责 row 赋值；name_col 为 name 起始字节偏移
 local function build_row_visual(opts)
   local prefix = string.rep(INDENT_STEP, opts.depth)
 
@@ -129,7 +129,7 @@ local function build_row_visual(opts)
     end
   end
 
-  return line, extmarks
+  return line, extmarks, col
 end
 
 ---@param buf integer
@@ -167,10 +167,12 @@ function M.render(state)
   local lines = {}
   local extmarks = {}
   local path_to_row = {}
+  local name_cols = {}
 
   -- 根行
   local root_label = vim.fn.fnamemodify(state.root.path, ':~')
   lines[1] = root_label
+  name_cols[1] = 0
   extmarks[#extmarks + 1] = {
     row = 0, col = 0,
     opts = { end_col = #root_label, hl_group = 'VVExplorerRoot' },
@@ -183,7 +185,7 @@ function M.render(state)
     local node = row.node
     local git_sym = git and git.status_map and Git.symbol_for(git.status_map[node.path])
     local diag_sym = diag and Diagnostics.symbol_for(diag[node.path])
-    local line, ems = build_row_visual({
+    local line, ems, name_col = build_row_visual({
       depth = row.depth,
       is_dir = node.is_dir,
       is_open = node.open,
@@ -196,6 +198,7 @@ function M.render(state)
     })
     lines[#lines + 1] = line
     local lnum = #lines - 1
+    name_cols[#lines] = name_col
     for _, em in ipairs(ems) do
       extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
     end
@@ -211,6 +214,7 @@ function M.render(state)
   end
 
   state.path_to_row = path_to_row
+  state.name_cols = name_cols
 
   -- 选区：整行高亮（不占 signcolumn）
   if state.selection then
@@ -252,6 +256,7 @@ function M.render_filter(state)
   local lines = {}
   local extmarks = {}
   local path_to_row = {}
+  local name_cols = {}
   local pseudo_rows = {}
 
   state.filter.match_count = #matched_abs
@@ -267,10 +272,10 @@ function M.render_filter(state)
     local diag = state.diagnostics
     local git_sym = git and git.status_map and Git.symbol_for(git.status_map[path])
     local diag_sym = diag and Diagnostics.symbol_for(diag[path])
-    local line, ems = build_row_visual({
+    local line, ems, name_col = build_row_visual({
       depth = depth,
       is_dir = is_dir,
-      is_open = is_dir, -- 过滤模式下 dir 都是"已展开到 match"的状态
+      is_open = is_dir,
       has_children = is_dir,
       display_name = name,
       path = path,
@@ -282,6 +287,7 @@ function M.render_filter(state)
     })
     lines[#lines + 1] = line
     local lnum = #lines - 1
+    name_cols[#lines] = name_col
     for _, em in ipairs(ems) do
       extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
     end
@@ -301,6 +307,7 @@ function M.render_filter(state)
 
   state.rows = pseudo_rows
   state.path_to_row = path_to_row
+  state.name_cols = name_cols
 
   if state.selection then
     for p in pairs(state.selection) do

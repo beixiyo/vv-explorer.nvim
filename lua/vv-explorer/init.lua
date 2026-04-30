@@ -116,6 +116,20 @@ local defaults = {
 local config = defaults
 local state = nil ---@type table?
 
+local function setup_cursor_snap(s)
+  vim.api.nvim_create_autocmd('CursorMoved', {
+    buffer = s.buf,
+    callback = function()
+      if not s.name_cols or not s.win or not vim.api.nvim_win_is_valid(s.win) then return end
+      local cursor = vim.api.nvim_win_get_cursor(s.win)
+      local target_col = s.name_cols[cursor[1]]
+      if target_col and cursor[2] ~= target_col then
+        vim.api.nvim_win_set_cursor(s.win, { cursor[1], target_col })
+      end
+    end,
+  })
+end
+
 local function register_highlights()
   -- 共享 git 状态色（VVGitAdded/Modified/...）统一由 vv-utils.git 注册
   require('vv-utils.git').register_hl()
@@ -286,6 +300,7 @@ function M.open(opts)
   end
 
   apply_keymaps(state)
+  setup_cursor_snap(state)
   if config.preview then Preview.attach(state) end
   if config.watch then Watch.attach(state) end
   if config.git.enabled then Git.attach(state) end
