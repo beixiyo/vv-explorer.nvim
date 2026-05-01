@@ -1,44 +1,29 @@
-# vv-explorer.nvim
+<h1 align="center">vv-explorer.nvim</h1>
 
-VSCode 风的 Neovim 文件树，自实现，零第三方依赖
+<p align="center">
+  <em>VSCode 风的 Neovim 文件树 — 实时预览、fd 异步过滤、零第三方依赖</em>
+</p>
 
-只做"侧栏 + 当前视图过滤"。全 repo picker 请搭配 [fff.nvim](https://github.com/dmtrKovalenko/fff.nvim) / Telescope 使用
+<p align="center">
+  <img src="https://img.shields.io/badge/Neovim-0.10+-57A143?style=flat-square&logo=neovim&logoColor=white" alt="Requires Neovim 0.10+" />
+  <img src="https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white" alt="Lua" />
+</p>
 
-## 为什么造这个轮子
+---
 
-用过 neo-tree / nvim-tree，两个问题解决不了：
+## 为什么要这个插件
 
-- **UI 无法按 VSCode 手感定制**：jk 移动时自动预览、`group_empty_dirs`（`a/b/c/` 单链合并）同时要、又不想带一坨多 source（buffers / git_status / ...）
-- **依赖膨胀**：plenary / nui 加起来为了几棵树不值得
-- **过滤体验**：想要 fd 异步索引 + `matchfuzzypos` 字符级高亮 + 祖先链保持，没有现成的
+用过 neo-tree / nvim-tree，几个问题解决不了：
 
-## 特性
-
-- **单 source 文件树**，`<leader>e` 开/关，`<leader>E` reveal 当前 buffer
-- **VSCode 风单击预览**：`j/k` 即时换文件，`<CR>` 或编辑操作自动固定
-- **空目录折叠**（`group_empty_dirs`，单链 `a/b/c/` 合并显示）
-- **libuv fs_event 自动刷新**（150ms 防抖）
-- **`/` 全树过滤**：fd 异步索引 + 三种搜索模式（fuzzy / glob / regex，`<S-Tab>` 切换）+ 祖先链保持；prompt 内 `<C-n>/<C-p>` 跳 match、`<C-x>/<C-v>` 直开分屏（fd 缺失走英文提示，不自动 fallback）
-- **git 状态**：异步 `git status --porcelain -z --ignored` 索引，行尾显示 `A/U/M/D/R/C/!` 符号（颜色对齐 VSCode gitDecoration.*），`.gitignore` 命中的路径暗色；`I` 切换显隐
-- **LSP 诊断**：订阅 `DiagnosticChanged`，行尾显示 `E/W/I/H`（按最高 severity）
-- **暗色路径**：dotfile（`.` 开头）+ gitignored 路径用 `VVExplorerDim`（默认 link `Comment`）
-- **永久隐藏 glob**：`filter.custom` 独立于 `.` toggle，写死 `node_modules` 之类
-- **`g?` help 浮窗**：反读 buffer mappings，永远和实际绑定一致
-- **CRUD**：新建 / 删除 / 重命名，支持嵌套路径 `a/b/c.ts`；重命名会同步同名 nvim buffer
-- **剪贴板**：yank / cut / paste（yazi/vim 风格），冲突追加 ` (copy)` 后缀
-- **批量选择**：`<Tab>` 切换，批量动作自动作用于选区
-- **图标走 mini.icons**，叠加用户 glob / Lua pattern 规则
-- **目录行 chevron**：icon 左侧画展开/折叠箭头，槽位用 `strdisplaywidth` 补齐到 2 列（抗 1-col / 2-col glyph 混排）
-
-## 依赖
-
-- Neovim 0.10+（`vim.uv` / `vim.fs` / `vim.glob` / `matchfuzzypos`）
-- 可选：[mini.icons](https://github.com/nvim-mini/mini.icons) —— 不装时所有文件统一显示 ``、目录 ``；装了则按 filetype / extension 渲染彩色图标
-- 可选：[`fd`](https://github.com/sharkdp/fd) —— `/` 过滤需要，缺失时提示安装
+| | neo-tree / nvim-tree | vv-explorer |
+|---|---|---|
+| **实时预览** | 需要额外配置或不支持 | `j`/`k` 移动即时切换文件预览，`<CR>` 固定 |
+| **过滤体验** | 无 / 基础 | fd 异步索引 + 三模式（fuzzy / glob / regex）+ 逐字高亮 + 祖先链保持 |
+| **空目录折叠** | neo-tree 支持 | 支持，`a/b/c/` 单链合并显示 |
+| **依赖** | plenary / nui | 零第三方依赖 |
+| **多 source** | buffers / git_status / ... | 只做文件树，全 repo picker 交给 Telescope / fff.nvim |
 
 ## 安装
-
-lazy.nvim（推荐同时装 mini.icons 获得彩色图标）：
 
 ```lua
 {
@@ -46,265 +31,74 @@ lazy.nvim（推荐同时装 mini.icons 获得彩色图标）：
   dependencies = {
     'beixiyo/vv-utils.nvim',
     -- 可选：彩色文件图标
-    {
-      'nvim-mini/mini.icons',
-      opts = {},
-      config = function(_, opts)
-        require('mini.icons').setup(opts)
-        MiniIcons.mock_nvim_web_devicons()  -- 让其它老插件也用同一份图标
-      end,
-    },
+    { 'echasnovski/mini.icons', opts = {} },
   },
   keys = { '<leader>e', '<leader>E' },
-  -- setup 空表就够：git / diagnostics / 全局键位 都默认开
-  opts = {},
+  ---@type VVExplorerConfig
+  opts = {
+    position = 'left',           -- 'left' | 'right'
+    width = 32,                  -- 窗口宽度
+    hidden = false,              -- 显示 dotfile（'.' 键切换）
+    group_empty_dirs = true,     -- 单链目录合并
+    preview = true,              -- VSCode 风单击预览
+    watch = true,                -- libuv fs_event 自动刷新
+    cwd = nil,                   -- 根目录（nil = vim.fn.getcwd()）
+    icon_rules = {},             -- 自定义图标规则
+    filter = {
+      custom = {},               -- 永久隐藏 glob，如 { 'node_modules', '.DS_Store' }
+    },
+    git = {
+      enabled = true,            -- git status 索引（非 git 仓库自动 no-op）
+      show_ignored = false,      -- 显示 .gitignore 命中的路径（'I' 键切换）
+    },
+    diagnostics = {
+      enabled = true,            -- LSP 诊断行尾符号（E/W/I/H）
+    },
+    global_mappings = {          -- 设 false 禁用全部全局键位
+      toggle = '<leader>e',      -- 打开/关闭文件树
+      reveal = '<leader>E',      -- 在树里定位当前 buffer
+    },
+  },
 }
 ```
 
 ## 配置
 
-### 默认行为（开箱即用，`setup({})` 就够）
+| 选项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `position` | `'left' \| 'right'` | `'left'` | 文件树窗口位置 |
+| `width` | `integer` | `32` | 窗口宽度 |
+| `hidden` | `boolean` | `false` | 是否显示 `.` 开头文件（`.` 键运行时切换） |
+| `group_empty_dirs` | `boolean` | `true` | 单链空目录合并显示 `a/b/c/` |
+| `preview` | `boolean` | `true` | `j`/`k` 即时预览文件，`<CR>` / 编辑操作升为固定 |
+| `watch` | `boolean` | `true` | libuv `fs_event` 自动刷新（150ms 防抖） |
+| `cwd` | `string?` | `nil` | 根目录，`nil` 时用 `vim.fn.getcwd()` |
+| `icon_rules` | `VVExplorerIconRule[]` | `{}` | 自定义图标：`{ glob?, pattern?, icon, hl?, scope? }` |
+| `filter.custom` | `string[]` | `{}` | 永久隐藏的 glob 列表，独立于 dotfile 切换 |
+| `git.enabled` | `boolean` | `true` | 异步 `git status` 索引，行尾显示 `A/U/M/D/R/C/!` |
+| `git.show_ignored` | `boolean` | `false` | 是否显示 `.gitignore` 命中的路径 |
+| `diagnostics.enabled` | `boolean` | `true` | 订阅 LSP 诊断，行尾显示最高 severity 符号 |
+| `global_mappings` | `table \| false` | `{ toggle, reveal }` | 全局键位；设 `false` 禁用全部 |
+| `mappings` | `table` | *25 项* | 树内 buffer 键位，可逐项覆盖或设 `false` 禁用 |
 
-| 功能 | 默认 | 说明 |
-|---|---|---|
-| 全局键位 `<leader>e` / `<leader>E` | ✅ 开 | 打开/关闭 & reveal 当前文件（展开到并跳光标 + 切焦点到树） |
-| `git` 状态 + ignored 暗色 | ✅ 开 | 走 `git status --porcelain --ignored`；非 git 仓库自动 no-op |
-| `diagnostics` 行尾符号 | ✅ 开 | 订阅 `DiagnosticChanged`，最高 severity 显 `E/W/I/H` |
-| VSCode 风单击预览 | ✅ 开 | `j/k` 即时换文件；`<CR>` / 编辑操作升为固定 |
-| `fs_event` 自动刷新 | ✅ 开 | libuv 监听 + 150ms debounce |
-| 空目录折叠 | ✅ 开 | `a/b/c/` 单链合并 |
-| 显示 dotfile / gitignored | ❌ 关 | `.` / `I` 键按需切换 |
-| `filter.custom` 永久隐藏 | ❌ 空 | 用户可填 `{ 'node_modules', '.DS_Store' }` 之类 |
+### 过滤（`/` 键触发）
 
-### 完整默认值
+需要 [`fd`](https://github.com/sharkdp/fd) 外部命令。三种搜索模式通过 `<S-Tab>` 切换：
 
-```lua
-require('vv-explorer').setup({
-  position = 'left',            -- 'left' | 'right'
-  width = 32,
-  hidden = false,               -- 显示 . 开头（`.` 键切换）
-  group_empty_dirs = true,      -- 单链目录合并
-  preview = true,               -- VSCode 风单击预览
-  watch = true,                 -- fs_event 自动刷新
-  cwd = nil,                    -- 默认用 vim.fn.getcwd()
-  icon_rules = {},              -- 见"自定义图标"
-  filter = {
-    custom = {},                -- 永久隐藏 glob，如 { 'node_modules', '.DS_Store' }
-  },
-  git = {
-    enabled = true,             -- 走 `git status --porcelain --ignored`；非 git 仓自动 no-op
-    show_ignored = false,       -- 是否显示 .gitignore 命中的路径（`I` 键切换）
-  },
-  diagnostics = {
-    enabled = true,             -- 订阅 LSP 诊断并在行尾显示符号
-  },
-  global_mappings = {
-    toggle = '<leader>e',       -- 打开/关闭文件树
-    reveal = '<leader>E',       -- 在树里定位当前 buffer 对应的文件
-    -- 整个 field 设 false 可禁用全部全局键位；单项设 false 只禁单个
-  },
-  mappings = { ... },           -- 树 buffer 内的 normal 键位，见下节
-})
-```
+| 模式 | 引擎 | 说明 |
+|------|------|------|
+| **fuzzy** | `vim.fn.matchfuzzypos` | 逐字位置高亮（默认） |
+| **glob** | `vim.glob.to_lpeg` | 不含 `/` 时自动跨段（`*.lua` ≡ `**/*.lua`） |
+| **regex** | `string.find` | Lua pattern |
 
-## 键位
-
-全部是树内 buffer 的 `n` 模式映射，参考 yazi / vim 传统
-
-### 导航
-
-| 键 | 动作 |
-|---|---|
-| `<CR>` / `l` / `o` / 双击 | 打开目录 / 打开文件 |
-| `h` | 关闭目录 / 跳到父目录 |
-| `.` | 切换显示 dotfile（yazi 风） |
-| `I` | 切换显示 gitignored 路径（需 `git.enabled`） |
-| `R` | 刷新（含 git 索引） |
-| `-` | 上移根目录 |
-| `<C-]>` | 把光标所在目录设为根 |
-| `g?` | 帮助浮窗（列所有 mappings） |
-| `<C-e>` | 向下滚动预览窗口 |
-| `<C-y>` | 向上滚动预览窗口 |
-| `q` | 关树 |
-
-### 打开方式
-
-| 键 | 动作 |
-|---|---|
-| `<C-x>` | 水平分屏打开文件 |
-| `<C-v>` | 垂直分屏打开文件 |
-| `<C-t>` | 新 tab 打开文件 |
-| `gx` | 系统默认程序打开（`xdg-open` / `open` / `start`） |
-| `Y` | 复制绝对路径到 `+` |
-| `<RightMouse>` | 右键复制绝对路径到 `+` |
-
-### CRUD
-
-| 键 | 动作 | 说明 |
-|---|---|---|
-| `a` | 新建 | 尾随 `/` 视为目录；支持嵌套 `foo/bar/baz.txt`，中间目录自动 `mkdir -p` |
-| `d` | 删除 | 带确认；**批量作用于选区**，无选区回退到光标节点 |
-| `r` | 重命名 | 单个；自动同步同名 nvim buffer（含目录下的子 buffer） |
-
-### 剪贴板
-
-| 键 | 动作 |
-|---|---|
-| `y` | yank（标记复制） |
-| `x` | 标记剪切 |
-| `p` | 粘贴到光标所在目录；同名追加 ` (copy)` / ` (copy 2)` 后缀 |
-
-`cut` 到自身子孙目录会被拒绝（否则会丢数据）
-
-### 批量选择
-
-| 键 | 动作 |
-|---|---|
-| `<Tab>` | 切换选中（再按一次取消） |
-| `<Esc>` | 优先级：有 filter 清 filter → 有选区清选区 |
-
-选中项整行 Visual 底色。`y` / `x` / `d` 看到选区非空就对全部生效，否则只操作光标节点
-
-### 过滤
-
-tree 内：
-
-| 键 | 动作 |
-|---|---|
-| `/` | 打开底部双行浮动输入框（mode badge + 输入），空 query 不筛选 |
-| `<Esc>` / `q` | 关 filter（恢复正常视图） |
-
-filter prompt 内（i / n 模式都生效）：
-
-| 键 | 动作 |
-|---|---|
-| `<S-Tab>` | 切换搜索模式：fuzzy → glob → regex |
-| `<C-n>` / `<C-p>` | 跳到下/上一个 match（焦点不离 prompt，自动驱动预览） |
-| `<C-x>` / `<C-v>` | 以 split / vsplit 直接打开当前 match |
-| `<CR>` | 跳到首个 match（保留 filter 视图） |
-| `<Esc>` / `q` | 取消 filter |
-
-三种搜索模式：
-
-- **fuzzy**（默认）：`vim.fn.matchfuzzypos`，逐字位置高亮
-- **glob**：`vim.glob.to_lpeg`；query 不含 `/` 时自动跨段（`*.lua` ≡ `**/*.lua`，纯文本 `foo` ≡ `**/*foo*`）
-- **regex**：Lua pattern（`string.find`），错误 pattern 自动忽略
-
-索引用 fd 异步构建，祖先链保持可见，按 `R` 失效索引重建
-
-## 自定义图标
-
-图标走 [mini.icons](https://github.com/nvim-mini/mini.icons)（如果全局 setup 过）；再往上可以加 glob / Lua pattern 规则：
+### 自定义图标规则
 
 ```lua
-require('vv-explorer').setup({
-  icon_rules = {
-    -- glob: 用 vim.glob.to_lpeg 编译
-    { glob = '**/*.{test,spec}.{ts,tsx,js,jsx}', icon = '', hl = 'DiagnosticOk' },
-    { glob = '.env*', icon = '', hl = 'WarningMsg' },
-    -- Lua pattern
-    { pattern = '^README',                        icon = '', hl = 'Title', scope = 'file' },
-    { pattern = '^docs$',                         icon = '', hl = 'Title', scope = 'directory' },
-  },
-})
+icon_rules = {
+  { glob = '**/*.{test,spec}.{ts,tsx}', icon = '', hl = 'DiagnosticOk' },
+  { glob = '.env*',                     icon = '', hl = 'WarningMsg' },
+  { pattern = '^README',                icon = '', hl = 'Title', scope = 'file' },
+}
 ```
 
-`scope`: `'file'` / `'directory'` / `'any'`（默认）
-
-规则匹配优先级：icon_rules（按顺序）> mini.icons > 内置默认
-
-## 高亮组
-
-全部 `default = true` link，colorscheme 可直接覆盖：
-
-| 组 | 默认 | 用途 |
-|---|---|---|
-| `VVExplorerRoot` | `Title` | 根路径行 |
-| `VVExplorerDir` | `Directory` | 目录名 |
-| `VVExplorerFile` | `Normal` | 文件名 |
-| `VVExplorerIndent` | `Comment` | chevron |
-| `VVExplorerDim` | `Comment` | dotfile / gitignored 暗色 |
-| `VVExplorerMatch` | `bg=#193d4c bold` | 过滤命中字符（逐字高亮：只改 bg，fg 透行色） |
-| `VVExplorerSelected` | `Visual` | 批量选中整行底色 |
-| `VVExplorerFilterModeFuzzy` | fg `#7dcfff` bold | filter prompt: fuzzy mode badge |
-| `VVExplorerFilterModeGlob` | fg `#e0af68` bold | filter prompt: glob mode badge |
-| `VVExplorerFilterModeRegex` | fg `#ff6ac1` bold | filter prompt: regex mode badge |
-| `VVGitAdded` | fg `#81b88b` | `A` staged added（VSCode 绿） |
-| `VVGitUntracked` | fg `#73c991` | `U` 未跟踪 `??`（VSCode 亮绿） |
-| `VVGitModified` | fg `#e2c08d` | `M` 修改（VSCode 黄） |
-| `VVGitDeleted` | fg `#c74e39` | `D` 删除（VSCode 红） |
-| `VVGitRenamed` | fg `#73c991` | `R`/`C` 重命名 / 拷贝（VSCode 同 untracked 亮绿） |
-| `VVGitConflict` | fg `#e4676b` bold | `!` 合并冲突（VSCode 红 bold） |
-| `VVDiagError` | `DiagnosticError` | LSP error |
-| `VVDiagWarn` | `DiagnosticWarn` | LSP warning |
-| `VVDiagInfo` | `DiagnosticInfo` | LSP info |
-| `VVDiagHint` | `DiagnosticHint` | LSP hint |
-
-> 以上 `VVGit*` 是共享组，由 [`vv-utils.git.register_hl()`](https://github.com/beixiyo/vv-utils.nvim/blob/main/lua/vv-utils/git.lua) 注册，vv-explorer / vv-git / 其他 vendor 统一消费
-
-## 公开 API
-
-```lua
-local ft = require('vv-explorer')
-ft.setup(opts)           -- 配置 + 注册 :VVExplorer* 命令
-ft.open({ cwd? })        -- 打开（已打开则聚焦）
-ft.close()               -- 只关窗口，buf 和树数据保留
-ft.toggle({ cwd? })
-ft.reveal({ file? })     -- 展开到并定位指定文件（默认当前 buffer）
-ft.focus()               -- 聚焦已打开的树窗口
-ft.is_open()
-```
-
-## 用户命令
-
-`:VVExplorerToggle` / `:VVExplorerOpen` / `:VVExplorerClose` / `:VVExplorerReveal` / `:VVExplorerFocus`
-
-## 架构
-
-13 个文件（fs 原语已抽到 [vv-utils.nvim](https://github.com/beixiyo/vv-utils.nvim) 共用）：
-
-| 文件 | 职责 |
-|---|---|
-| `init.lua` | setup / 命令 / 默认高亮 / state 生命周期 |
-| `tree.lua` | Node 数据结构 + `fs_scandir` + flatten（hidden / custom glob / ignored 三重过滤）+ expand_to |
-| `render.lua` | 正常 / 过滤两条渲染路径，arrow/icon 槽位 `strdisplaywidth` 补齐；dim 判断 + 行尾 git/diag virt_text |
-| `actions.lua` | open/close/toggle_hidden/toggle_gitignored/refresh/cd/filter/help + 打开方式 + yank + CRUD + 剪贴板 + 选区 |
-| `preview.lua` | VSCode 风单击预览：CursorMoved + BufModifiedSet + find_main_win |
-| `filter.lua` | fd 异步索引 + 三模式（fuzzy/glob/regex）分发 + mode 元数据 + 祖先链集合 |
-| `prompt.lua` | 底部双行浮动输入框（mode badge + S-Tab 提示 overlay + placeholder + match 导航 + 直开分屏） |
-| `watch.lua` | `vim.uv.new_fs_event` + 150ms 防抖；同步触发 git 刷新 |
-| `window.lua` | split 创建 + buffer/window 选项（`bufhidden='hide'` 让 buf 跨 close/open 存活） |
-| `icons.lua` | 规则匹配（`vim.glob.to_lpeg` / Lua pattern）+ MiniIcons fallback |
-| `git.lua` | 薄适配层：attach/detach + 200ms debounce；`vv-utils.git.index` 产出索引，转发 `symbol_for` |
-| `diagnostics.lua` | 薄适配层：订阅 `DiagnosticChanged` → `vv-utils.diagnostics.collect_by_path` → render；转发 `symbol_for` |
-| `help.lua` | `?` 浮窗：反读 buffer mappings（desc 前缀 `vv-explorer:`）列表展示 |
-
-## 设计取舍
-
-- **单 buffer 生命周期跨 close/open**：`bufhidden='hide'`，关树只关窗口，fs_event 继续后台跑，下次 `open` 秒显
-- **filter 索引 fd-only**：不做 libuv fallback —— 没装 fd 就英文提示去 GitHub，避免 UX 分裂
-- **rename 不走 `:saveas`**：直接 fs_rename + `nvim_buf_set_name`，保留 unsaved 状态
-- **paste 永远非破坏**：冲突追加 ` (copy)` 后缀而非覆盖。如果要覆盖请先 `d` 删掉目标
-- **cut 到自身子孙目录拒绝**：否则会丢数据
-- **图标槽位固定 2 列**：MiniIcons 给的 folder 2-col / file 1-col 混排，用 `vim.fn.strdisplaywidth` 统一补齐，扛所有 nerd font
-
-## 不做什么
-
-- buffers / git_status / remote 等多 source 树 —— neo-tree 更适合
-- 全 repo 模糊 picker —— 用 fff.nvim / Telescope
-- 自己的 session 持久化 —— 靠 nvim 原生 `mksession` 和 `bufhidden='hide'` 跨 close/open 已经够用
-
-
-## Testing
-
-Smoke test (zero deps, runs in `-u NONE`):
-
-```bash
-nvim --headless -u NONE -l tests/test_smoke.lua
-```
-
-Expected: trailing line `X passed, 0 failed`.
-
-## License
-
-MIT
+`scope`: `'file'` / `'directory'` / `'any'`（默认）。优先级：icon_rules > mini.icons > 内置默认
