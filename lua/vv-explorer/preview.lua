@@ -76,17 +76,17 @@ function M.preview_file(state, path)
     vim.fn.bufload(target)
   end
 
-  -- bufload 在 Lua 调用 + 无窗口归属的路径下不会跑 filetype 检测，
-  -- 导致 FileType autocmd 不 fire → treesitter 不启动 → 无高亮
-  -- 显式检测一次：set filetype 会自动触发 FileType autocmd
+  local ok = pcall(vim.api.nvim_win_set_buf, main, target)
+  if not ok then return end
+  M._preview[state] = target
+
+  -- filetype 检测必须在 buffer 进入窗口之后：
+  -- render-markdown 等插件在 FileType 时调 buf.win(buf) 取窗口句柄，
+  -- 若 buffer 还没有归属窗口则初始渲染会被跳过
   if vim.bo[target].filetype == '' then
     local ft = vim.filetype.match({ buf = target, filename = path })
     if ft then vim.bo[target].filetype = ft end
   end
-
-  local ok = pcall(vim.api.nvim_win_set_buf, main, target)
-  if not ok then return end
-  M._preview[state] = target
 
   -- 被 displace 的 cur_buf 若是空 [No Name]（startup buffer / `:enew` 残留）→ wipe
   -- 不影响有内容/有名/被修改的 buffer；dashboard 等 bufhidden=wipe 的 buf 走自己的清理

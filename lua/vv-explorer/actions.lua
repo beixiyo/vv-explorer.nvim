@@ -524,6 +524,9 @@ function M.create(state)
     Tree.expand_to(state.root, target)
     Render.render(state)
     focus_path(state, target)
+    if not is_dir then
+      open_file(state, { path = target })
+    end
     vim.notify('Created: ' .. vim.fn.fnamemodify(target, ':.'))
   end)
 end

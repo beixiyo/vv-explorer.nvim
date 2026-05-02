@@ -6,7 +6,12 @@
 
 ### Fixed
 
+- **preview**: filetype 检测移到 `nvim_win_set_buf` 之后，修复 render-markdown 等插件在预览窗口不渲染的问题（根因：`FileType` 触发时 buffer 尚无归属窗口，插件 `buf.win(buf)` 返回 -1 导致初始渲染被跳过）
 - **perf**: HOME-as-repo 场景下 `git status --ignored` 递归扫全盘导致文件树卡 13s+，改用 `git ls-files --others --ignored --directory`（`--directory` 不递归进 ignored 目录，~20ms）
+
+### Changed
+
+- **create**: 新建文件后自动在主窗口打开并聚焦（目录仍保持树内定位），行为与 VSCode 一致
 
 ### Added
 
