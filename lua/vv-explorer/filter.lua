@@ -34,7 +34,7 @@ function M.next_mode(mode)
 end
 
 ---@param cwd string
----@param opts {hidden?:boolean}
+---@param opts {hidden?:boolean, show_ignored?:boolean, custom?:string[]}
 ---@param on_done fun(paths: string[])  异步回调，paths 是绝对路径列表
 ---@return boolean ok  fd 不存在时返回 false，不会调 on_done
 function M.build_index(cwd, opts, on_done)
@@ -53,8 +53,15 @@ function M.build_index(cwd, opts, on_done)
 
   local cmd = { 'fd', '--type', 'f', '--type', 'd' }
   if opts and opts.hidden then cmd[#cmd + 1] = '--hidden' end
+  if opts and opts.show_ignored then cmd[#cmd + 1] = '--no-ignore' end
   cmd[#cmd + 1] = '--exclude'
   cmd[#cmd + 1] = '.git'
+  if opts and opts.custom then
+    for _, glob in ipairs(opts.custom) do
+      cmd[#cmd + 1] = '--exclude'
+      cmd[#cmd + 1] = glob
+    end
+  end
   cmd[#cmd + 1] = '.'
   cmd[#cmd + 1] = cwd
 

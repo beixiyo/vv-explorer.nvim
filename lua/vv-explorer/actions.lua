@@ -10,6 +10,7 @@ local Filter = require('vv-explorer.filter')
 local Prompt = require('vv-explorer.prompt')
 local Fs = require('vv-utils.fs')
 local Editor = require('vv-utils.editor')
+local Trash = require('vv-explorer.trash')
 
 local M = {}
 
@@ -192,6 +193,7 @@ end
 ---@param state table
 function M.toggle_hidden(state)
   state.opts.hidden = not state.opts.hidden
+  if state.filter then state.filter.index = nil end
   Render.render(state)
   vim.notify('vv-explorer: hidden = ' .. tostring(state.opts.hidden))
 end
@@ -206,8 +208,14 @@ function M.refresh(state)
   Render.render(state)
 end
 
----@param state table  复制绝对路径到 + 寄存器
+---@param state table  复制绝对路径到 + 寄存器（有选区时复制所有选中路径）
 function M.yank_abs_path(state)
+  ensure_state_fields(state)
+  local paths = selected_paths(state)
+  if #paths > 0 then
+    Editor.copy(table.concat(paths, '\n'), { title = 'vv-explorer' })
+    return
+  end
   local node = M.node_under_cursor(state)
   if not node then return end
   Editor.copy_path({ path = node.path, title = 'vv-explorer' })
@@ -250,6 +258,7 @@ end
 function M.toggle_gitignored(state)
   state.opts.git = state.opts.git or {}
   state.opts.git.show_ignored = not state.opts.git.show_ignored
+  if state.filter then state.filter.index = nil end
   Render.render(state)
   vim.notify('vv-explorer: show_ignored = ' .. tostring(state.opts.git.show_ignored))
 end
@@ -409,7 +418,11 @@ local function ensure_filter_index(state)
   local f = state.filter
   if f.index or f.index_building then return true end
   f.index_building = true
-  local ok = Filter.build_index(state.root.path, { hidden = state.opts.hidden }, function(paths)
+  local ok = Filter.build_index(state.root.path, {
+    hidden = state.opts.hidden,
+    show_ignored = state.opts.git and state.opts.git.show_ignored,
+    custom = state.opts.filter and state.opts.filter.custom,
+  }, function(paths)
     f.index = paths
     f.index_building = false
     if state.filter and state.filter.active then refilter(state) end
@@ -456,7 +469,7 @@ end
 
 -- ============ 选区 ============
 
----@param state table  <Tab>：切换光标节点的选中态（再按一次即取消）
+---@param state table  <Tab>：切换光标节点的选中态，自动移到下一行
 function M.toggle_select(state)
   ensure_state_fields(state)
   local node = M.node_under_cursor(state)
@@ -467,6 +480,12 @@ function M.toggle_select(state)
     state.selection[node.path] = true
   end
   Render.render(state)
+
+  local last = vim.api.nvim_buf_line_count(state.buf)
+  local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+  if lnum < last then
+    vim.api.nvim_win_set_cursor(state.win, { lnum + 1, 0 })
+  end
 end
 
 ---@param state table  清空选区
@@ -531,6 +550,40 @@ function M.create(state)
   end)
 end
 
+---@param state table
+---@param paths string[]
+local function cleanup_deleted_bufs(state, paths)
+  local set = {}
+  for _, p in ipairs(paths) do
+    local abs = vim.fn.fnamemodify(p, ':p'):gsub('/+$', '')
+    set[abs] = true
+  end
+
+  Preview.clear_if_deleted(state, set)
+
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      local name = vim.api.nvim_buf_get_name(buf)
+      if name == '' then goto skip end
+      local hit = set[name]
+      if not hit then
+        for abs in pairs(set) do
+          if name:sub(1, #abs + 1) == abs .. '/' then hit = true; break end
+        end
+      end
+      if hit then
+        for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+          if win ~= state.win and vim.api.nvim_win_is_valid(win) then
+            vim.api.nvim_win_call(win, function() vim.cmd('enew') end)
+          end
+        end
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end
+      ::skip::
+    end
+  end
+end
+
 -- d：删除（批量或单个），带确认
 ---@param state table
 function M.delete(state)
@@ -539,25 +592,41 @@ function M.delete(state)
   local paths = targets(state, node)
   if #paths == 0 then return end
 
+  local use_trash = Trash.enabled()
+  local verb = use_trash and 'Trash' or 'Delete'
   local msg
   if #paths == 1 then
-    msg = 'Delete ' .. vim.fn.fnamemodify(paths[1], ':.') .. ' ?'
+    msg = verb .. ' ' .. vim.fn.fnamemodify(paths[1], ':.') .. ' ?'
   else
-    msg = ('Delete %d items ?'):format(#paths)
+    msg = ('%s %d items ?'):format(verb, #paths)
   end
   local choice = vim.fn.confirm(msg, '&Yes\n&No', 2)
   if choice ~= 1 then return end
 
-  local failed = {}
-  for _, p in ipairs(paths) do
-    local ok, err = pcall(Fs.delete, p)
-    if not ok then failed[#failed + 1] = tostring(err) end
-  end
-  if #failed > 0 then
-    vim.notify('vv-explorer: delete errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
+  local deleted, failed
+  if use_trash then
+    local result = Trash.trash(paths)
+    deleted = result.trashed
+    failed = result.failed
   else
-    vim.notify(('Deleted %d item(s)'):format(#paths))
+    deleted, failed = {}, {}
+    for _, p in ipairs(paths) do
+      local ok, err = pcall(Fs.delete, p)
+      if not ok then
+        failed[#failed + 1] = tostring(err)
+      else
+        deleted[#deleted + 1] = p
+      end
+    end
   end
+
+  if #failed > 0 then
+    vim.notify('vv-explorer: ' .. verb:lower() .. ' errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
+  else
+    local past = use_trash and 'Trashed' or 'Deleted'
+    vim.notify(('%s %d item(s)'):format(past, #deleted))
+  end
+  if #deleted > 0 then cleanup_deleted_bufs(state, deleted) end
   after_fs_change(state)
 end
 
@@ -595,6 +664,7 @@ function M.cut_mark(state)
   local paths = targets(state, node)
   if #paths == 0 then return end
   state.clipboard = { mode = 'cut', paths = paths }
+  Render.render(state)
   vim.notify(('Cut %d item(s)'):format(#paths))
 end
 
@@ -605,6 +675,7 @@ function M.copy_mark(state)
   local paths = targets(state, node)
   if #paths == 0 then return end
   state.clipboard = { mode = 'copy', paths = paths }
+  Render.render(state)
   vim.notify(('Copy %d item(s)'):format(#paths))
 end
 
@@ -648,7 +719,7 @@ function M.paste(state)
   if #failed > 0 then
     vim.notify('vv-explorer: paste errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
   end
-  if mode == 'cut' then state.clipboard = nil end
+  state.clipboard = nil
   after_fs_change(state)
   if last_dst then
     Tree.expand_to(state.root, last_dst)
@@ -684,5 +755,10 @@ end
 
 function M.scroll_preview_down(state) scroll_preview(state, CE_KEY) end
 function M.scroll_preview_up(state) scroll_preview(state, CY_KEY) end
+
+---@param state table
+function M.trash_panel(state)
+  Trash.open_panel(state)
+end
 
 return M

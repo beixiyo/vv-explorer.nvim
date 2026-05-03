@@ -29,6 +29,7 @@ local Icons = require('vv-explorer.icons')
 local Actions = require('vv-explorer.actions')
 local Git = require('vv-explorer.git')
 local Diagnostics = require('vv-explorer.diagnostics')
+local Trash = require('vv-explorer.trash')
 
 local M = {}
 
@@ -72,6 +73,12 @@ local defaults = {
   filter = { custom = {} },
   git = { enabled = true, show_ignored = false },
   diagnostics = { enabled = true },
+  trash = {
+    enabled = true,
+    max_items = 5000,
+    warn_size_mb = 500,
+    scan_on_open = true,
+  },
   global_mappings = {
     toggle = '<leader>e',
     reveal = '<leader>E',
@@ -89,7 +96,7 @@ local defaults = {
     ['I']     = 'toggle_gitignored', -- gitignored 显隐（Phase 2 生效）
     ['R']     = 'refresh',
     ['Y']     = 'yank_abs_path',   -- 绝对路径
-    ['<C-]>'] = 'cd_to',
+    ['=']     = 'cd_to',
     ['-']     = 'cd_up',
     ['/']     = 'start_filter',
     ['<Esc>'] = 'escape', -- 优先级：filter > selection > 无操作
@@ -110,6 +117,8 @@ local defaults = {
     ['p']     = 'paste',       -- 粘贴到光标目录
     -- 批量选择：Tab 自身即可切换，再按一次取消
     ['<Tab>'] = 'toggle_select',
+    -- 回收站
+    ['T']     = 'trash_panel',
   },
 }
 
@@ -199,6 +208,15 @@ end
 ---@param opts VVExplorerConfig?
 function M.setup(opts)
   config = vim.tbl_deep_extend('force', defaults, opts or {})
+
+  -- trash: false → 关闭, true → 默认, table → 合并
+  if config.trash == false then
+    config.trash = { enabled = false }
+  elseif config.trash == true then
+    config.trash = vim.tbl_deep_extend('force', {}, defaults.trash)
+  end
+  Trash.setup(config.trash)
+
   Icons.compile(config.icon_rules)
   register_highlights()
 
@@ -207,6 +225,9 @@ function M.setup(opts)
   vim.api.nvim_create_user_command('VVExplorerClose', function() M.close() end, {})
   vim.api.nvim_create_user_command('VVExplorerReveal', function() M.reveal() end, {})
   vim.api.nvim_create_user_command('VVExplorerFocus', function() M.focus() end, {})
+  vim.api.nvim_create_user_command('VVExplorerTrash', function()
+    Trash.open_panel(state)
+  end, { desc = 'vv-explorer: open trash panel' })
 
   -- 全局键位：用户想自己管就 setup({ global_mappings = false })
   if config.global_mappings then
@@ -307,6 +328,18 @@ function M.open(opts)
   if config.diagnostics.enabled then Diagnostics.attach(state) end
 
   Render.render(state)
+
+  if config.trash.enabled and config.trash.scan_on_open then
+    Trash.scan_size(function(bytes)
+      local mb = bytes / (1024 * 1024)
+      if mb > config.trash.warn_size_mb then
+        vim.notify(
+          string.format('vv-explorer: trash %.0f MB, consider :VVExplorerTrash to clean', mb),
+          vim.log.levels.WARN
+        )
+      end
+    end)
+  end
 
   -- 用户手动关窗（:q / <C-w>q）→ 走 close_window_only（保留 state）
   vim.api.nvim_create_autocmd('WinClosed', {

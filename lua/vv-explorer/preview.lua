@@ -112,6 +112,16 @@ function M.promote(state)
 end
 
 ---@param state table
+---@param path_set table<string, boolean>
+function M.clear_if_deleted(state, path_set)
+  local buf = M._preview[state]
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  if path_set[vim.api.nvim_buf_get_name(buf)] then
+    M._preview[state] = nil
+  end
+end
+
+---@param state table
 function M.attach(state)
   local aug = vim.api.nvim_create_augroup('vv-explorer.preview.' .. state.buf, { clear = true })
 

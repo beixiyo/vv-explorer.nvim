@@ -10,6 +10,19 @@ local Diagnostics = require('vv-explorer.diagnostics')
 local M = {}
 local ns = vim.api.nvim_create_namespace('vv-explorer')
 
+local ui_icons = require('vv-icons').raw.ui
+local CB_CUT  = ui_icons.clipboard_cut
+local CB_COPY = ui_icons.clipboard_copy
+
+---@param state table
+---@return table<string, boolean> set, string? mode
+local function clipboard_set(state)
+  if not state.clipboard then return {}, nil end
+  local set = {}
+  for _, p in ipairs(state.clipboard.paths) do set[p] = true end
+  return set, state.clipboard.mode
+end
+
 -- dim 三层规则：
 --   tracked → 永远正常色（用户明确在意的文件，凌驾于 dotfile / ignored 之上）
 --   dotfile（node.hidden）或 gitignored → 暗色
@@ -41,7 +54,7 @@ local function pad_to_cols(s, cols)
   return s .. string.rep(' ', cols - w), cols
 end
 
----@param opts {depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, path:string, match_positions?:integer[], basename_byte_offset?:integer, dim?:boolean, git_symbol?:{glyph:string,hl:string}, diag_symbol?:{glyph:string,hl:string}}
+---@param opts {depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, path:string, match_positions?:integer[], basename_byte_offset?:integer, dim?:boolean, clipboard?:'cut'|'copy', git_symbol?:{glyph:string,hl:string}, diag_symbol?:{glyph:string,hl:string}}
 ---@return string line, table[] extmarks, integer name_col  extmarks 不含 lnum，调用方负责 row 赋值；name_col 为 name 起始字节偏移
 local function build_row_visual(opts)
   local prefix = string.rep(INDENT_STEP, opts.depth)
@@ -96,10 +109,15 @@ local function build_row_visual(opts)
     opts = { end_col = col + #name, hl_group = name_hl },
   }
 
-  -- 行尾符号：git 状态 + 诊断（inline virt_text，不占真实列）
+  -- 行尾符号：剪贴板标记 + git 状态 + 诊断（inline virt_text，不占真实列）
   local chunks
-  if opts.git_symbol or opts.diag_symbol then
+  if opts.clipboard or opts.git_symbol or opts.diag_symbol then
     chunks = {}
+    if opts.clipboard then
+      local icon = opts.clipboard == 'cut' and CB_CUT or CB_COPY
+      chunks[#chunks + 1] = { ' ', nil }
+      chunks[#chunks + 1] = { icon.glyph, icon.hl }
+    end
     if opts.git_symbol then
       chunks[#chunks + 1] = { ' ', nil }
       chunks[#chunks + 1] = { opts.git_symbol.glyph, opts.git_symbol.hl }
@@ -179,6 +197,8 @@ function M.render(state)
   }
   path_to_row[state.root.path] = 1
 
+  local cb_set, cb_mode = clipboard_set(state)
+
   local git = state.git
   local diag = state.diagnostics
   for _, row in ipairs(rows) do
@@ -193,6 +213,7 @@ function M.render(state)
       display_name = row.display_name,
       path = node.path,
       dim = is_dim(state, node.path, node.hidden),
+      clipboard = cb_set[node.path] and cb_mode or nil,
       git_symbol = git_sym,
       diag_symbol = diag_sym,
     })
@@ -261,6 +282,8 @@ function M.render_filter(state)
 
   state.filter.match_count = #matched_abs
 
+  local cb_set, cb_mode = clipboard_set(state)
+
   for _, path in ipairs(list) do
     local rel = path:sub(#cwd + 2)
     local depth = 0
@@ -282,6 +305,7 @@ function M.render_filter(state)
       match_positions = positions_by_path[path],
       basename_byte_offset = #rel - #name,
       dim = is_dim(state, path, name:sub(1, 1) == '.'),
+      clipboard = cb_set[path] and cb_mode or nil,
       git_symbol = git_sym,
       diag_symbol = diag_sym,
     })

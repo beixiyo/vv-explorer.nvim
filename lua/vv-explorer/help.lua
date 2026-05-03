@@ -27,6 +27,7 @@ local ACTIONS = {
   copy_mark         = { cat = 'Clipboard', icon = '' },
   cut_mark          = { cat = 'Clipboard', icon = '' },
   paste             = { cat = 'Clipboard', icon = '' },
+  trash_panel       = { cat = 'Modify',    icon = '󰆴' },
   toggle_select     = { cat = 'Select',    icon = '' },
   escape            = { cat = 'Select',    icon = '' },
   __close           = { cat = 'Select',    icon = '' },
