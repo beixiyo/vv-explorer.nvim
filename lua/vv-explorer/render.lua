@@ -43,8 +43,8 @@ end
 -- 关键：arrow / icon 都用 strdisplaywidth 测量，**补齐到固定 2 列**，
 -- 才能扛住不同 nerd font / MiniIcons 给的 1-col 或 2-col glyph 混排
 local INDENT_STEP = '  '   -- 2 列 / 深度
-local ARROW_OPEN  = '' -- nf-fa-chevron_down
-local ARROW_CLOSE = '' -- nf-fa-chevron_right
+local ARROW_OPEN  = ui_icons.fold_open.glyph
+local ARROW_CLOSE = ui_icons.fold_closed.glyph
 local ARROW_SLOT_COLS = 2  -- 箭头槽位固定 2 列
 local ICON_SLOT_COLS  = 2  -- 图标槽位固定 2 列
 
