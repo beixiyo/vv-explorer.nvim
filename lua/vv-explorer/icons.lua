@@ -59,8 +59,14 @@ function M.resolve(node)
   local mi = _G.MiniIcons
   if node.is_dir then
     if mi then
-      local g, h = mi.get('directory', node.name)
-      if g then return g, h end
+      local g, h, is_default = mi.get('directory', node.name)
+      if not is_default then return g, h end
+      local lower = node.name:lower()
+      if lower ~= node.name then
+        local g2, h2, d2 = mi.get('directory', lower)
+        if not d2 then return g2, h2 end
+      end
+      return g, h
     end
     if not node.has_children then return DEFAULT_DIR_EMPTY.glyph, DEFAULT_DIR_EMPTY.hl end
     local d = node.open and DEFAULT_DIR_OPEN or DEFAULT_DIR_CLOSED
@@ -68,8 +74,14 @@ function M.resolve(node)
   end
 
   if mi then
-    local g, h = mi.get('file', node.name)
-    if g then return g, h end
+    local g, h, is_default = mi.get('file', node.name)
+    if not is_default then return g, h end
+    local lower = node.name:lower()
+    if lower ~= node.name then
+      local g2, h2, d2 = mi.get('file', lower)
+      if not d2 then return g2, h2 end
+    end
+    return g, h
   end
   return DEFAULT_FILE.glyph, DEFAULT_FILE.hl
 end
