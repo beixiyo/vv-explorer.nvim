@@ -212,6 +212,12 @@ local function apply_keymaps(s)
       end, { buffer = s.buf, nowait = true, silent = true, desc = desc })
     end
   end
+
+  -- 屏蔽默认右键 visual 选区行为（含双击/三击）
+  for _, key in ipairs({ '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
+    vim.keymap.set({ 'n', 'x' }, key, '<Nop>', { buffer = s.buf, silent = true })
+  end
+  vim.keymap.set('x', '<RightMouse>', '<Esc>', { buffer = s.buf, silent = true })
 end
 
 ---@param opts VVExplorerConfig?

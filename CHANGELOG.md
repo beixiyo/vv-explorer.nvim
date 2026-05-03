@@ -6,8 +6,7 @@
 
 ### Added
 
-- **单击展开文件夹**：鼠标单击（`<LeftRelease>`）仅展开/收起目录，文件仍走预览；双击打开文件
-- **右键复制路径**：右键任意文件/目录即可复制绝对路径，通过 `getmousepos()` 精准定位光标
+- **鼠标操作**：单击（`<LeftRelease>`）展开/收起目录（文件不动，走预览）；右键（`<RightMouse>` + `getmousepos()`）复制绝对路径，屏蔽右键 visual 选区
 - **大小写不敏感图标**：MiniIcons 精确匹配失败时自动尝试小写（如 `Components` → `components`）
 - **回收站**：`d` 删除改为移入 `~/.local/share/vv-explorer/trash/`，不再真删
   - `T` 键 / `:VVExplorerTrash` 打开彩色回收站面板，支持恢复（`r`）、永久删除（`d`）、清空（`D`）
