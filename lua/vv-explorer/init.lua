@@ -89,8 +89,17 @@ local defaults = {
     ['<CR>']  = 'open',
     ['l']     = 'open',
     ['o']     = 'open',
-    ['<2-LeftMouse>'] = 'open',
-    ['<RightMouse>']  = 'yank_abs_path', -- 右键复制绝对路径
+    ['<LeftRelease>'] = function(s)
+      local node = Actions.node_under_cursor(s)
+      if node and node.is_dir then Actions.open(s) end
+    end,
+    ['<RightMouse>'] = function(s)
+      local pos = vim.fn.getmousepos()
+      if pos.line > 0 then
+        pcall(vim.api.nvim_win_set_cursor, s.win, { pos.line, 0 })
+      end
+      Actions.yank_abs_path(s)
+    end,
     ['h']     = 'close_node',
     ['.']     = 'toggle_hidden',   -- yazi 风：dotfile 显隐
     ['I']     = 'toggle_gitignored', -- gitignored 显隐（Phase 2 生效）
