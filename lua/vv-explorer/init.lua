@@ -102,7 +102,9 @@ local defaults = {
     end,
     ['h']     = 'close_node',
     ['.']     = 'toggle_hidden',   -- yazi 风：dotfile 显隐
+    ['<M-.>'] = 'toggle_hidden',
     ['I']     = 'toggle_gitignored', -- gitignored 显隐（Phase 2 生效）
+    ['<M-i>'] = 'toggle_gitignored',
     ['R']     = 'refresh',
     ['Y']     = 'yank_abs_path',   -- 绝对路径
     ['=']     = 'cd_to',

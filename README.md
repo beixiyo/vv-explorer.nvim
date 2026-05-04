@@ -134,8 +134,8 @@ icon_rules = {
 | `/` | `start_filter` | 打开过滤提示框 |
 | `<Esc>` | `escape` | 清 filter → 清选区 → 关树 |
 | `q` | `__quit` | 清 filter 或关树 |
-| `.` | `toggle_hidden` | 切换 dotfile 显隐 |
-| `I` | `toggle_gitignored` | 切换 gitignored 显隐 |
+| `.` / `<M-.>` | `toggle_hidden` | 切换 dotfile 显隐 |
+| `I` / `<M-i>` | `toggle_gitignored` | 切换 gitignored 显隐 |
 | `R` | `refresh` | 强制刷新 |
 | `Y` | `yank_abs_path` | 复制路径（多选时复制所有） |
 | `<C-x>` | `open_split` | 水平分屏打开 |
