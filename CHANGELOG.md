@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- **preview + image.nvim 兼容**：`nvim_win_set_buf` 不触发 `BufLeave`/`BufWinEnter`，导致 image.nvim 无法 hijack 图片 buffer、切走后旧图片不清除。现在对图片文件定向补发事件（通过 `nvim_win_call` 确保窗口上下文正确），非图片文件不受影响
 - **preview**：filetype 检测移到 `nvim_win_set_buf` 之后，修复 render-markdown 等插件在预览窗口不渲染的问题（根因：`FileType` 触发时 buffer 尚无归属窗口，插件 `buf.win(buf)` 返回 -1 导致初始渲染被跳过）
 - **perf**：HOME-as-repo 场景下 `git status --ignored` 递归扫全盘导致文件树卡 13s+，改用 `git ls-files --others --ignored --directory`（`--directory` 不递归进 ignored 目录，~20ms）
 

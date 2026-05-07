@@ -15,6 +15,14 @@ local Window = require('vv-explorer.window')
 
 local M = {}
 
+local IMAGE_EXTS = { png = true, jpg = true, jpeg = true, gif = true, webp = true, avif = true }
+
+---@param path string
+local function is_image(path)
+  local ext = path:match('%.(%w+)$')
+  return ext and IMAGE_EXTS[ext:lower()] or false
+end
+
 -- state -> bufnr (weak key，state gc 后自动清理)
 M._preview = setmetatable({}, { __mode = 'k' })
 
@@ -79,6 +87,15 @@ function M.preview_file(state, path)
   local ok = pcall(vim.api.nvim_win_set_buf, main, target)
   if not ok then return end
   M._preview[state] = target
+
+  -- nvim_win_set_buf 不触发 BufLeave/BufWinEnter；
+  -- 仅对图片文件定向补发，避免对普通文件触发 LSP attach / auto-save 等重操作
+  if is_image(abs) or is_image(vim.api.nvim_buf_get_name(cur_buf)) then
+    pcall(vim.api.nvim_win_call, main, function()
+      vim.api.nvim_exec_autocmds('BufLeave', { buffer = cur_buf })
+      vim.api.nvim_exec_autocmds('BufWinEnter', { buffer = target })
+    end)
+  end
 
   -- filetype 检测必须在 buffer 进入窗口之后：
   -- render-markdown 等插件在 FileType 时调 buf.win(buf) 取窗口句柄，
