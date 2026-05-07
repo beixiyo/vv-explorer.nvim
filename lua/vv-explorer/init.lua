@@ -136,6 +136,9 @@ local defaults = {
 local config = defaults
 local state = nil ---@type table?
 
+local Fs = require('vv-utils.fs')
+local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-explorer.json')
+
 local function setup_cursor_snap(s)
   vim.api.nvim_create_autocmd('CursorMoved', {
     buffer = s.buf,
@@ -226,6 +229,9 @@ end
 function M.setup(opts)
   config = vim.tbl_deep_extend('force', defaults, opts or {})
 
+  local persisted = Fs.load_json(PERSIST_FILE)
+  if persisted.width then config.width = persisted.width end
+
   -- trash: false → 关闭, true → 默认, table → 合并
   if config.trash == false then
     config.trash = { enabled = false }
@@ -259,6 +265,13 @@ function M.setup(opts)
     end
   end
 
+  vim.api.nvim_create_autocmd('VimLeavePre', {
+    callback = function()
+      if state and state._tracked_width then
+        Fs.save_json(PERSIST_FILE, { width = state._tracked_width })
+      end
+    end,
+  })
 end
 
 -- state 的生命周期分两类字段：
@@ -290,9 +303,7 @@ end
 local function close_window_only()
   if not state then return end
   if state.win and vim.api.nvim_win_is_valid(state.win) then
-    if state.opts then
-      state.opts.width = vim.api.nvim_win_get_width(state.win)
-    end
+    if state.opts then state.opts.width = state._tracked_width end
     Window.close_win(state.win)
   end
   state.win = nil
@@ -335,10 +346,20 @@ function M.open(opts)
     prev_win = prev,
     root = Tree.new_root(cwd),
     opts = vim.tbl_deep_extend('force', {}, config),
+    _tracked_width = config.width,
   }
   state.on_after_render = function(s)
     if s._rescan_watches then s._rescan_watches() end
   end
+
+  vim.api.nvim_create_autocmd('WinResized', {
+    callback = function()
+      if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then
+        return not state
+      end
+      state._tracked_width = vim.api.nvim_win_get_width(state.win)
+    end,
+  })
 
   apply_keymaps(state)
   setup_cursor_snap(state)

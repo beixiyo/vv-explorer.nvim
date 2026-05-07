@@ -1,7 +1,5 @@
 # Changelog
 
-格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)
-
 ## [Unreleased]
 
 ### Added
@@ -18,6 +16,8 @@
 - **多选复制路径**：`Y` 在有选区时复制所有选中路径（换行分隔）到系统剪贴板
 - **Tab 自动下移**：`<Tab>`（toggle_select）切换选中后自动移到下一行
 - **删除后清理预览 buffer**：删除正在预览的文件时，自动关闭主窗口中对应的 buffer
+
+- **宽度持久化**：调整文件树宽度后跨 session 记住，通过 `WinResized` 实时跟踪 + `VimLeavePre` 写入 `stdpath('data')/vv-explorer.json`
 
 ### Changed
 
