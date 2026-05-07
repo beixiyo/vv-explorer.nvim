@@ -290,6 +290,9 @@ end
 local function close_window_only()
   if not state then return end
   if state.win and vim.api.nvim_win_is_valid(state.win) then
+    if state.opts then
+      state.opts.width = vim.api.nvim_win_get_width(state.win)
+    end
     Window.close_win(state.win)
   end
   state.win = nil
