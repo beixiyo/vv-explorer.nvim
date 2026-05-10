@@ -79,8 +79,8 @@ opts = {
   },
 
   global_mappings = {          -- 设 false 禁用全部全局键位
-    toggle = '<leader>e',      -- 打开/关闭文件树
-    reveal = '<leader>E',      -- 在树里定位当前 buffer
+    toggle = '<leader>E',      -- 打开/关闭文件树（简单 Toggle）
+    reveal = '<leader>e',      -- 定位当前文件（若已打开且聚焦则 Toggle）
   },
 
   mappings = { ... },          -- 树内 buffer 键位（见下方键位表）

@@ -83,8 +83,8 @@ local defaults = {
     scan_on_open = true,
   },
   global_mappings = {
-    toggle = '<leader>e',
-    reveal = '<leader>E',
+    toggle = '<leader>E',
+    reveal = '<leader>e',
   },
   mappings = {
     ['<C-e>'] = 'scroll_preview_down',
@@ -410,6 +410,11 @@ end
 
 ---@param opts {file?:string}?
 function M.reveal(opts)
+  if M.is_open() and state and vim.api.nvim_get_current_win() == state.win then
+    M.close()
+    return
+  end
+
   opts = opts or {}
   local file = opts.file or vim.api.nvim_buf_get_name(0)
   if file == '' or vim.fn.filereadable(file) == 0 and vim.fn.isdirectory(file) == 0 then
