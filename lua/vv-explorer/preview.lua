@@ -70,7 +70,8 @@ function M.preview_file(state, path)
   if not vim.api.nvim_win_is_valid(main) then return end
 
   local cur_buf = vim.api.nvim_win_get_buf(main)
-  if vim.api.nvim_buf_get_name(cur_buf) == abs then return end
+  local cur_buf_name = vim.api.nvim_buf_get_name(cur_buf)
+  if cur_buf_name == abs then return end
 
   local old = M._preview[state]
 
@@ -90,10 +91,14 @@ function M.preview_file(state, path)
 
   -- nvim_win_set_buf 不触发 BufLeave/BufWinEnter；
   -- 仅对图片文件定向补发，避免对普通文件触发 LSP attach / auto-save 等重操作
-  if is_image(abs) or is_image(vim.api.nvim_buf_get_name(cur_buf)) then
+  if is_image(abs) or is_image(cur_buf_name) then
     pcall(vim.api.nvim_win_call, main, function()
-      vim.api.nvim_exec_autocmds('BufLeave', { buffer = cur_buf })
-      vim.api.nvim_exec_autocmds('BufWinEnter', { buffer = target })
+      if vim.api.nvim_buf_is_valid(cur_buf) then
+        vim.api.nvim_exec_autocmds('BufLeave', { buffer = cur_buf })
+      end
+      if vim.api.nvim_buf_is_valid(target) then
+        vim.api.nvim_exec_autocmds('BufWinEnter', { buffer = target })
+      end
     end)
   end
 
