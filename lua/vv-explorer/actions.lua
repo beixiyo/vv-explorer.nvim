@@ -63,7 +63,10 @@ local function after_fs_change(state)
   -- filter 索引 & 树结构全失效 → 重扫 + 清选区
   Tree.refresh(state.root)
   state.selection = {}
-  if state.filter then state.filter.index = nil end
+  if state.filter then 
+    state.filter.index = nil 
+    state.filter.index_rels = nil
+  end
   if state.git and state.git.refresh then state.git.refresh() end
   Render.render(state)
 end
@@ -193,7 +196,10 @@ end
 ---@param state table
 function M.toggle_hidden(state)
   state.opts.hidden = not state.opts.hidden
-  if state.filter then state.filter.index = nil end
+  if state.filter then 
+    state.filter.index = nil 
+    state.filter.index_rels = nil
+  end
   Render.render(state)
   vim.notify('vv-explorer: hidden = ' .. tostring(state.opts.hidden))
 end
@@ -203,6 +209,7 @@ function M.refresh(state)
   Tree.refresh(state.root)
   if state.filter then
     state.filter.index = nil -- 失效索引，下次 / 重建
+    state.filter.index_rels = nil
   end
   if state.git and state.git.refresh then state.git.refresh() end
   Render.render(state)
@@ -258,7 +265,10 @@ end
 function M.toggle_gitignored(state)
   state.opts.git = state.opts.git or {}
   state.opts.git.show_ignored = not state.opts.git.show_ignored
-  if state.filter then state.filter.index = nil end
+  if state.filter then 
+    state.filter.index = nil 
+    state.filter.index_rels = nil
+  end
   Render.render(state)
   vim.notify('vv-explorer: show_ignored = ' .. tostring(state.opts.git.show_ignored))
 end
@@ -295,7 +305,10 @@ local function refilter(state)
   elseif not f.index then
     f.matched = EMPTY_MATCHED
   else
-    f.matched = Filter.match(f.index, state.root.path, f.query, f.mode)
+    if not f.index_rels then
+      f.index_rels = Filter.build_rels(f.index, state.root.path)
+    end
+    f.matched = Filter.match(f.index, f.index_rels, state.root.path, f.query, f.mode, state.opts.filter and state.opts.filter.max_results)
   end
   Render.render(state) -- 更新 state.filter.match_count（仅过滤渲染会写）
   if f.on_redraw then pcall(f.on_redraw) end
@@ -422,8 +435,9 @@ local function ensure_filter_index(state)
     hidden = state.opts.hidden,
     show_ignored = state.opts.git and state.opts.git.show_ignored,
     custom = state.opts.filter and state.opts.filter.custom,
-  }, function(paths)
+  }, function(paths, is_dir_map)
     f.index = paths
+    f.is_dir_map = is_dir_map
     f.index_building = false
     if state.filter and state.filter.active then refilter(state) end
   end)
@@ -507,7 +521,7 @@ function M.escape(state)
     M.clear_selection(state)
     return
   end
-  require('vv-explorer').close()
+  vim.cmd('VVExplorerClose')
 end
 
 -- ============ CRUD ============

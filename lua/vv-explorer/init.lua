@@ -35,6 +35,9 @@ local M = {}
 
 ---@class VVExplorerFilterConfig
 ---@field custom string[] 永久隐藏的 glob 列表（独立于 `.` toggle），如 {'node_modules', '.DS_Store'}
+---@field max_results integer 最大搜索结果数，避免渲染卡死
+---@field debounce_threshold integer 文件数达到此阈值时开始动态防抖（默认 5000，以下 0ms）
+---@field debounce_max_ms integer 防抖延迟的最高封顶值（毫秒，默认 500）
 
 ---@class VVExplorerGitConfig
 ---@field enabled boolean 启用 git 状态索引（走 `git status --porcelain --ignored`，非 git 仓库自动 no-op）
@@ -70,7 +73,7 @@ local defaults = {
   watch = true,
   cwd = nil,
   icon_rules = {},
-  filter = { custom = {} },
+  filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },
   git = { enabled = true, show_ignored = false },
   diagnostics = { enabled = true },
   trash = {

@@ -15,7 +15,6 @@
 
 local Filter = require('vv-explorer.filter')
 
-local QUERY_DEBOUNCE_MS = 30
 local PROMPT_HEIGHT = 2
 local LABEL_ROW = 0 -- 0-indexed
 local INPUT_ROW = 1
@@ -220,14 +219,11 @@ function M.open(state, opts)
   end
 
   local closed = false
-  local uv = vim.uv or vim.loop
-  local timer = uv.new_timer()
 
   local function close()
     if closed then return end
     closed = true
     if state.filter then state.filter.on_redraw = nil end
-    timer:stop(); pcall(timer.close, timer)
     if vim.api.nvim_win_is_valid(win) then
       pcall(vim.api.nvim_win_close, win, true)
     end
@@ -248,17 +244,30 @@ function M.open(state, opts)
     end,
   })
 
+  local filter_opts = state.opts and state.opts.filter or {}
+  local threshold = filter_opts.debounce_threshold or 5000
+  local max_ms = filter_opts.debounce_max_ms or 600
+
+  local get_debounce_ms = function()
+    local count = state.filter and state.filter.index and #state.filter.index or 0
+    if count >= threshold then
+      return math.min(max_ms, math.floor(count / 100))
+    end
+    return 0
+  end
+
+  local on_change_debounced = require('vv-utils.timer').debounce(function()
+    if closed or not vim.api.nvim_buf_is_valid(buf) then return end
+    opts.on_change(get_query())
+  end, get_debounce_ms)
+
   -- 编辑后重画：label 上的 status 段 / placeholder 都依赖当前 input 内容
   vim.api.nvim_create_autocmd({ 'TextChangedI', 'TextChanged' }, {
     group = aug,
     buffer = buf,
     callback = function()
       redraw()
-      timer:stop()
-      timer:start(QUERY_DEBOUNCE_MS, 0, vim.schedule_wrap(function()
-        if closed or not vim.api.nvim_buf_is_valid(buf) then return end
-        opts.on_change(get_query())
-      end))
+      on_change_debounced()
     end,
   })
 

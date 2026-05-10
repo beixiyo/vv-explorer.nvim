@@ -57,6 +57,9 @@ opts = {
 
   filter = {
     custom = {},               -- 永久隐藏 glob，如 { 'node_modules', '.DS_Store' }
+    max_results = 1000,        -- 最大搜索结果数，避免渲染卡死
+    debounce_threshold = 5000, -- 文件数达到此阈值时开始动态防抖（以下 0ms）
+    debounce_max_ms = 500,     -- 防抖延迟的最高封顶值（毫秒）
   },
 
   git = {

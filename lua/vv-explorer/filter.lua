@@ -70,13 +70,19 @@ function M.build_index(cwd, opts, on_done)
     { text = true },
     vim.schedule_wrap(function(r)
       local paths = {}
+      local is_dir_map = {}
       if r.code == 0 and r.stdout then
         for line in r.stdout:gmatch('[^\n]+') do
-          if line:sub(-1) == '/' then line = line:sub(1, -2) end
+          local is_dir = false
+          if line:sub(-1) == '/' then 
+            line = line:sub(1, -2) 
+            is_dir = true
+          end
           paths[#paths + 1] = line
+          if is_dir then is_dir_map[line] = true end
         end
       end
-      on_done(paths)
+      on_done(paths, is_dir_map)
     end)
   )
   return true
@@ -86,7 +92,7 @@ end
 ---@param index string[]
 ---@param cwd string
 ---@return string[] rels
-local function build_rels(index, cwd)
+function M.build_rels(index, cwd)
   local rels = {}
   local prefix_len = #cwd + 2 -- cwd + '/'
   for i, p in ipairs(index) do
@@ -140,14 +146,14 @@ end
 ---@param query string
 ---@return {matched:string[], positions:integer[][]}
 local function match_regex(rels, query)
-  -- Lua pattern：错误的 pattern 不应崩溃
-  local ok = pcall(string.find, '', query)
-  if not ok then return { matched = {}, positions = {} } end
+  local ok, regex = pcall(vim.regex, query)
+  if not ok or not regex then return { matched = {}, positions = {} } end
 
   local matched = {}
   for _, rel in ipairs(rels) do
-    local ok2, s = pcall(string.find, rel, query)
-    if ok2 and s then matched[#matched + 1] = rel end
+    if regex:match_str(rel) then
+      matched[#matched + 1] = rel
+    end
   end
   table.sort(matched)
   local positions = {}
@@ -155,19 +161,17 @@ local function match_regex(rels, query)
   return { matched = matched, positions = positions }
 end
 
-local MAX_MATCHES = 1000
-
 ---@param index string[] 绝对路径列表
+---@param rels string[] 相对路径列表
 ---@param cwd string     根目录（会从匹配字符串里剥掉做打分）
 ---@param query string
 ---@param mode? 'fuzzy'|'glob'|'regex' 默认 'fuzzy'
+---@param max_results? integer 默认 1000
 ---@return {abs:string[], rels:string[], positions:integer[][], total_count:integer}  abs 为绝对路径；positions[i] 为 rels[i] 里 0-indexed 匹配字符下标（仅 fuzzy）
-function M.match(index, cwd, query, mode)
+function M.match(index, rels, cwd, query, mode, max_results)
   if query == '' or #index == 0 then
     return { abs = {}, rels = {}, positions = {}, total_count = 0 }
   end
-
-  local rels = build_rels(index, cwd)
 
   local r
   if mode == 'glob' then
@@ -183,11 +187,13 @@ function M.match(index, cwd, query, mode)
     return { abs = {}, rels = {}, positions = {}, total_count = 0 }
   end
 
+  local limit = max_results or 1000
+
   -- 限制匹配数量：避免过大的搜索结果导致渲染和 extmark 计算卡死
   -- fuzzy 模式下保留的是打分最高的前 N 项
-  if total > MAX_MATCHES then
+  if total > limit then
     local nm, np = {}, {}
-    for i = 1, MAX_MATCHES do
+    for i = 1, limit do
       nm[i] = r.matched[i]
       np[i] = r.positions[i]
     end
@@ -204,19 +210,21 @@ end
 
 ---@param matched_abs string[]
 ---@param cwd string
----@return table<string, boolean>  matches + 所有祖先的路径集合
+---@return table<string, boolean> visible, table<string, boolean> is_dir_map
 function M.visible_set(matched_abs, cwd)
   local visible = {}
+  local is_dir_map = {}
   for _, abs in ipairs(matched_abs) do
     local p = abs
     while true do
       visible[p] = true
       local parent = vim.fs.dirname(p)
       if parent == p or parent == cwd or #parent <= #cwd then break end
+      is_dir_map[parent] = true
       p = parent
     end
   end
-  return visible
+  return visible, is_dir_map
 end
 
 return M

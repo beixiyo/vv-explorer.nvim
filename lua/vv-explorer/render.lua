@@ -263,16 +263,57 @@ function M.render_filter(state)
   local f = state.filter
   local cwd = state.root.path
   local matched_abs = f.matched.abs
-  local visible = Filter.visible_set(matched_abs, cwd)
+  local visible, visible_is_dir_map = Filter.visible_set(matched_abs, cwd)
 
   local positions_by_path = {}
   for i = 1, #f.matched.rels do
     positions_by_path[f.matched.abs[i]] = f.matched.positions[i]
   end
 
+  local path_rank = {}
+  for rank, abs in ipairs(matched_abs) do
+    local p = abs
+    while true do
+      if not path_rank[p] or rank < path_rank[p] then
+        path_rank[p] = rank
+      end
+      local parent = vim.fs.dirname(p)
+      if parent == p or parent == cwd or #parent <= #cwd then break end
+      p = parent
+    end
+  end
+
   local list = {}
-  for p in pairs(visible) do list[#list + 1] = p end
-  table.sort(list, function(a, b) return a < b end)
+  local path_parts = {}
+  for p in pairs(visible) do 
+    list[#list + 1] = p 
+    local rel = p:sub(#cwd + 2)
+    local parts = {}
+    local current = cwd
+    for part in rel:gmatch('[^/]+') do
+      current = current .. '/' .. part
+      parts[#parts + 1] = { name = part, path = current }
+    end
+    path_parts[p] = parts
+  end
+
+  table.sort(list, function(a, b)
+    local pa = path_parts[a]
+    local pb = path_parts[b]
+    for i = 1, math.min(#pa, #pb) do
+      local ca = pa[i]
+      local cb = pb[i]
+      if ca.name ~= cb.name then
+        local rankA = path_rank[ca.path] or 999999
+        local rankB = path_rank[cb.path] or 999999
+        if rankA ~= rankB then
+          return rankA < rankB
+        end
+        return ca.name < cb.name
+      end
+    end
+    return #pa < #pb
+  end)
 
   local lines = {}
   local extmarks = {}
@@ -290,7 +331,15 @@ function M.render_filter(state)
     local depth = 0
     for _ in rel:gmatch('/') do depth = depth + 1 end
     local name = vim.fs.basename(path)
-    local is_dir = vim.fn.isdirectory(path) == 1
+    
+    local is_dir
+    if visible_is_dir_map[path] then
+      is_dir = true
+    elseif f.is_dir_map and f.is_dir_map[path] ~= nil then
+      is_dir = f.is_dir_map[path]
+    else
+      is_dir = vim.fn.isdirectory(path) == 1
+    end
 
     local git = state.git
     local diag = state.diagnostics
