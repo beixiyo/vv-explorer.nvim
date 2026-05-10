@@ -16,7 +16,7 @@ local M = {}
 
 -- 空 matched 形态：matched 的所有读路径（matched_lnums / render_filter / on_submit）
 -- 都假设 abs/rels/positions 是 list；统一空表后无需额外 nil 守卫
-local EMPTY_MATCHED = { abs = {}, rels = {}, positions = {} }
+local EMPTY_MATCHED = { abs = {}, rels = {}, positions = {}, total_count = 0 }
 
 -- ============ 选区 / 剪贴板辅助 ============
 -- state.selection: { [path] = true }，批量动作的作用集合

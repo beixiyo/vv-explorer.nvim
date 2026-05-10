@@ -155,14 +155,16 @@ local function match_regex(rels, query)
   return { matched = matched, positions = positions }
 end
 
+local MAX_MATCHES = 1000
+
 ---@param index string[] 绝对路径列表
 ---@param cwd string     根目录（会从匹配字符串里剥掉做打分）
 ---@param query string
 ---@param mode? 'fuzzy'|'glob'|'regex' 默认 'fuzzy'
----@return {abs:string[], rels:string[], positions:integer[][]}  abs 为绝对路径；positions[i] 为 rels[i] 里 0-indexed 匹配字符下标（仅 fuzzy）
+---@return {abs:string[], rels:string[], positions:integer[][], total_count:integer}  abs 为绝对路径；positions[i] 为 rels[i] 里 0-indexed 匹配字符下标（仅 fuzzy）
 function M.match(index, cwd, query, mode)
   if query == '' or #index == 0 then
-    return { abs = {}, rels = {}, positions = {} }
+    return { abs = {}, rels = {}, positions = {}, total_count = 0 }
   end
 
   local rels = build_rels(index, cwd)
@@ -176,15 +178,28 @@ function M.match(index, cwd, query, mode)
     r = match_fuzzy(rels, query)
   end
 
-  if #r.matched == 0 then
-    return { abs = {}, rels = {}, positions = {} }
+  local total = #r.matched
+  if total == 0 then
+    return { abs = {}, rels = {}, positions = {}, total_count = 0 }
+  end
+
+  -- 限制匹配数量：避免过大的搜索结果导致渲染和 extmark 计算卡死
+  -- fuzzy 模式下保留的是打分最高的前 N 项
+  if total > MAX_MATCHES then
+    local nm, np = {}, {}
+    for i = 1, MAX_MATCHES do
+      nm[i] = r.matched[i]
+      np[i] = r.positions[i]
+    end
+    r.matched = nm
+    r.positions = np
   end
 
   local abs = {}
   for i, rel in ipairs(r.matched) do
     abs[i] = cwd .. '/' .. rel
   end
-  return { abs = abs, rels = r.matched, positions = r.positions }
+  return { abs = abs, rels = r.matched, positions = r.positions, total_count = total }
 end
 
 ---@param matched_abs string[]

@@ -107,7 +107,11 @@ local function setup_decorations(buf, state, opts)
     end
     if status then
       segs[#segs + 1] = { ' · ',  'Comment' }
-      segs[#segs + 1] = { status, 'Comment' }
+      local text = status
+      if f.display_count and f.match_count and f.display_count < f.match_count then
+        text = string.format('showing %d of %d', f.display_count, f.match_count)
+      end
+      segs[#segs + 1] = { text, 'Comment' }
     end
 
     vim.api.nvim_buf_set_extmark(buf, label_ns, LABEL_ROW, 0, {

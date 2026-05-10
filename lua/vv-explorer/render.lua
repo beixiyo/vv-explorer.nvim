@@ -280,7 +280,8 @@ function M.render_filter(state)
   local name_cols = {}
   local pseudo_rows = {}
 
-  state.filter.match_count = #matched_abs
+  state.filter.match_count = f.matched.total_count
+  state.filter.display_count = #matched_abs
 
   local cb_set, cb_mode = clipboard_set(state)
 
@@ -346,6 +347,15 @@ function M.render_filter(state)
   end
 
   flush(state.buf, lines, extmarks)
+
+  -- 自动滚动到最佳匹配项（fuzzy 模式下 matched.abs[1] 是得分最高的项）
+  if #matched_abs > 0 and state.win and vim.api.nvim_win_is_valid(state.win) then
+    local best = matched_abs[1]
+    local target_lnum = path_to_row[best]
+    if target_lnum then
+      pcall(vim.api.nvim_win_set_cursor, state.win, { target_lnum, 0 })
+    end
+  end
 end
 
 return M
