@@ -12,10 +12,10 @@ local M = {}
 
 local rules = {}
 
-local DEFAULT_DIR_CLOSED = { glyph = '', hl = 'VVExplorerDir' }
-local DEFAULT_DIR_OPEN   = { glyph = '', hl = 'VVExplorerDir' }
+local DEFAULT_DIR_CLOSED = { glyph = '󰉋', hl = 'VVExplorerDir' }
+local DEFAULT_DIR_OPEN   = { glyph = '󰝰', hl = 'VVExplorerDir' }
 local DEFAULT_DIR_EMPTY  = { glyph = '󰉖', hl = 'VVExplorerDir' }
-local DEFAULT_FILE       = { glyph = '', hl = 'VVExplorerFile' }
+local DEFAULT_FILE       = { glyph = '󰈔', hl = 'VVExplorerFile' }
 
 ---@param user_rules VVExplorerIconRule[]?
 function M.compile(user_rules)
@@ -56,33 +56,30 @@ function M.resolve(node)
     end
   end
 
-  local mi = _G.MiniIcons
+  local icons = require('vv-icons')
   if node.is_dir then
-    if mi then
-      local g, h, is_default = mi.get('directory', node.name)
-      if not is_default then return g, h end
-      local lower = node.name:lower()
-      if lower ~= node.name then
-        local g2, h2, d2 = mi.get('directory', lower)
-        if not d2 then return g2, h2 end
-      end
-      return g, h
+    -- 1. 询问 vv-icons（含展开态和空状态逻辑）
+    local g, h, is_default = icons.get('directory', node.name, {
+      open = node.open,
+      empty = not node.has_children
+    })
+
+    local default_obj = (not node.has_children) and DEFAULT_DIR_EMPTY or (node.open and DEFAULT_DIR_OPEN or DEFAULT_DIR_CLOSED)
+
+    -- 2. 如果 vv-icons 命中了数据，则返回。
+    -- 如果 h 为 nil（说明是全局 fallback），则回退到插件自己的高亮组
+    if not is_default then
+      return g, h or default_obj.hl
     end
-    if not node.has_children then return DEFAULT_DIR_EMPTY.glyph, DEFAULT_DIR_EMPTY.hl end
-    local d = node.open and DEFAULT_DIR_OPEN or DEFAULT_DIR_CLOSED
-    return d.glyph, d.hl
+
+    -- 3. 完全没有数据时的 fallback
+    return default_obj.glyph, default_obj.hl
   end
 
-  if mi then
-    local g, h, is_default = mi.get('file', node.name)
-    if not is_default then return g, h end
-    local lower = node.name:lower()
-    if lower ~= node.name then
-      local g2, h2, d2 = mi.get('file', lower)
-      if not d2 then return g2, h2 end
-    end
-    return g, h
-  end
+  -- 文件逻辑
+  local g, h, is_default = icons.get('file', node.name)
+  if not is_default then return g, h end
+
   return DEFAULT_FILE.glyph, DEFAULT_FILE.hl
 end
 

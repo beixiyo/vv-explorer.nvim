@@ -4,6 +4,8 @@
 
 ### Added
 
+- **状态感应图标**：文件夹现在支持三种状态切换：关闭 (󰉋)、展开 (󰝰)、空目录 (󰉖)，视觉风格对齐 `snacks.nvim`
+- **特定目录展开态**：如 `src` 目录在展开时会从普通文件夹图标变为展开状态图标 (`󰝰`)
 - **鼠标操作**：单击（`<LeftRelease>`）展开/收起目录（文件不动，走预览）；右键（`<RightMouse>` + `getmousepos()`）复制绝对路径，屏蔽右键 visual 选区
 - **大小写不敏感图标**：MiniIcons 精确匹配失败时自动尝试小写（如 `Components` → `components`）
 - **回收站**：`d` 删除改为移入 `~/.local/share/vv-explorer/trash/`，不再真删
@@ -21,6 +23,7 @@
 
 ### Changed
 
+- **图标路由优化**：重构 `icons.lua`，优先通过 `vv-icons` 获取增强的状态图标，并保持对全局 `_G.MiniIcons` 的标准兼容
 - **键位**：`cd_to` 从 `<C-]>` 改为 `=`（与 `-`（cd_up）对称配对）
 - **过滤索引**：尊重 `show_ignored`（传 `--no-ignore` 给 fd）和 `filter.custom` glob（传 `--exclude`）
 - **过滤失效**：切换 hidden（`.`）或 gitignored（`I`）后自动失效过滤索引，下次 `/` 用新配置重建
