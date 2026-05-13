@@ -57,6 +57,7 @@ local M = {}
 ---@field group_empty_dirs boolean 单链 dir 合并显示
 ---@field preview boolean VSCode 风单击预览
 ---@field watch boolean libuv fs_event 自动刷新
+---@field follow_file boolean 切换 buffer 时自动在树中展开并高亮对应文件（不抢焦点）
 ---@field cwd string? 默认根目录（nil → vim.fn.getcwd()）
 ---@field icon_rules VVExplorerIconRule[]
 ---@field filter VVExplorerFilterConfig
@@ -71,6 +72,7 @@ local defaults = {
   group_empty_dirs = true,
   preview = true,
   watch = true,
+  follow_file = true,
   cwd = nil,
   icon_rules = {},
   filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },
@@ -228,6 +230,37 @@ local function apply_keymaps(s)
   vim.keymap.set('x', '<RightMouse>', '<Esc>', { buffer = s.buf, silent = true })
 end
 
+local function reveal_no_focus(file)
+  if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
+
+  local p = vim.fs.normalize(file)
+  if state.path_to_row then
+    local existing = state.path_to_row[p]
+    if existing then
+      local cur = vim.api.nvim_win_get_cursor(state.win)[1]
+      if cur ~= existing then
+        vim.api.nvim_win_set_cursor(state.win, { existing, 0 })
+      end
+      return
+    end
+  end
+
+  if not Tree.expand_to(state.root, file) then return end
+  Render.render(state)
+
+  local lnum
+  while p ~= '' do
+    lnum = state.path_to_row[p]
+    if lnum then break end
+    local parent = vim.fs.dirname(p)
+    if parent == p then break end
+    p = parent
+  end
+  if lnum then
+    vim.api.nvim_win_set_cursor(state.win, { lnum, 0 })
+  end
+end
+
 ---@param opts VVExplorerConfig?
 function M.setup(opts)
   config = vim.tbl_deep_extend('force', defaults, opts or {})
@@ -266,6 +299,22 @@ function M.setup(opts)
       vim.keymap.set('n', gm.reveal, '<cmd>VVExplorerReveal<cr>',
         { desc = 'vv-explorer: reveal current file', silent = true })
     end
+  end
+
+  if config.follow_file then
+    vim.api.nvim_create_autocmd('BufEnter', {
+      callback = function(ev)
+        if not M.is_open() then return end
+        if state and ev.buf == state.buf then return end
+        local win = vim.api.nvim_get_current_win()
+        if vim.api.nvim_win_get_config(win).relative ~= '' then return end
+        if vim.bo[ev.buf].buftype ~= '' then return end
+        local file = vim.api.nvim_buf_get_name(ev.buf)
+        if file == '' then return end
+        if vim.fn.filereadable(file) == 0 and vim.fn.isdirectory(file) == 0 then return end
+        reveal_no_focus(file)
+      end,
+    })
   end
 
   vim.api.nvim_create_autocmd('VimLeavePre', {
