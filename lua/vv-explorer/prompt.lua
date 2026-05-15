@@ -22,6 +22,8 @@ local INPUT_LNUM = INPUT_ROW + 1 -- nvim_win_set_cursor 是 1-indexed
 
 local M = {}
 
+local SPINNER_FRAMES = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
+
 ---@class VVExplorerPromptOpts
 ---@field initial? string
 ---@field on_change fun(query:string)
@@ -74,8 +76,9 @@ end
 ---@param buf integer
 ---@param state table
 ---@param opts VVExplorerPromptOpts
+---@param spinner_ctx {frame:integer}
 ---@return fun() redraw
-local function setup_decorations(buf, state, opts)
+local function setup_decorations(buf, state, opts, spinner_ctx)
   local label_ns = vim.api.nvim_create_namespace('vv-explorer-prompt-label')
   local ph_ns = vim.api.nvim_create_namespace('vv-explorer-prompt-ph')
 
@@ -99,15 +102,18 @@ local function setup_decorations(buf, state, opts)
 
     local f = state.filter
     local status
+    local spin = SPINNER_FRAMES[spinner_ctx.frame] .. ' '
     if f and f.index_building then
-      status = 'indexing…'
+      status = spin .. 'indexing…'
+    elseif f and f.searching then
+      status = spin .. 'searching…'
     elseif f and f.match_count ~= nil and (f.query or '') ~= '' then
       status = string.format('%d match%s', f.match_count, f.match_count == 1 and '' or 'es')
     end
     if status then
       segs[#segs + 1] = { ' · ',  'Comment' }
       local text = status
-      if f.display_count and f.match_count and f.display_count < f.match_count then
+      if f and f.display_count and f.match_count and f.display_count < f.match_count then
         text = string.format('showing %d of %d', f.display_count, f.match_count)
       end
       segs[#segs + 1] = { text, 'Comment' }
@@ -204,10 +210,38 @@ function M.open(state, opts)
   local buf, win = setup_floating_window(state, initial)
   if not buf or not win then return end
 
-  local redraw = setup_decorations(buf, state, opts)
+  local spinner_ctx = { frame = 1 }
+  local closed = false
+
+  local redraw = setup_decorations(buf, state, opts, spinner_ctx)
   redraw()
   -- 让 actions.refilter 在每次过滤后回调，刷新 mode badge / status / placeholder
   state.filter.on_redraw = redraw
+
+  -- spinner：index_building / searching 期间每 80ms 转一帧
+  local spinner_timer = nil
+  local function stop_spinner()
+    if not spinner_timer then return end
+    spinner_timer:stop()
+    pcall(function() spinner_timer:close() end)
+    spinner_timer = nil
+  end
+  local function start_spinner()
+    if spinner_timer then return end
+    spinner_ctx.frame = 1
+    spinner_timer = vim.uv.new_timer()
+    spinner_timer:start(0, 80, vim.schedule_wrap(function()
+      if closed then stop_spinner(); return end
+      local f = state.filter
+      if not f or (not f.searching and not f.index_building) then
+        stop_spinner()
+        redraw()
+        return
+      end
+      spinner_ctx.frame = (spinner_ctx.frame % #SPINNER_FRAMES) + 1
+      redraw()
+    end))
+  end
 
   -- 光标落在 input 行行尾
   vim.api.nvim_win_set_cursor(win, { INPUT_LNUM, #initial })
@@ -218,16 +252,18 @@ function M.open(state, opts)
     return line
   end
 
-  local closed = false
-
   local function close()
     if closed then return end
     closed = true
+    stop_spinner()
     if state.filter then state.filter.on_redraw = nil end
     if vim.api.nvim_win_is_valid(win) then
       pcall(vim.api.nvim_win_close, win, true)
     end
   end
+
+  -- 若打开时 fd 正在建索引，立刻启动 spinner
+  if state.filter and state.filter.index_building then start_spinner() end
 
   local aug = vim.api.nvim_create_augroup('vv-explorer-prompt.' .. buf, { clear = true })
 
@@ -253,7 +289,7 @@ function M.open(state, opts)
     if count >= threshold then
       return math.min(max_ms, math.floor(count / 100))
     end
-    return 0
+    return 30
   end
 
   local on_change_debounced = require('vv-utils.timer').debounce(function()
@@ -266,6 +302,10 @@ function M.open(state, opts)
     group = aug,
     buffer = buf,
     callback = function()
+      if state.filter and get_query() ~= '' then
+        state.filter.searching = true
+        start_spinner()
+      end
       redraw()
       on_change_debounced()
     end,

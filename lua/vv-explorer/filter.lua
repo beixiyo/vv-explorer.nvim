@@ -101,11 +101,34 @@ function M.build_rels(index, cwd)
   return rels
 end
 
+-- 预过滤：所有 query 字符必须按序出现在 rel 中（fuzzy 匹配的必要条件）
+-- 在 matchfuzzypos 前调用，把候选从 10 万量级缩至百级，消除主线程阻塞
+local function fast_prefilter(rels, query)
+  local ql = query:lower()
+  local qchars = {}
+  for i = 1, #ql do qchars[i] = ql:sub(i, i) end
+  local qlen = #qchars
+  local result = {}
+  for _, rel in ipairs(rels) do
+    local rl = rel:lower()
+    local pos = 1
+    local ok = true
+    for i = 1, qlen do
+      local found = rl:find(qchars[i], pos, true)
+      if not found then ok = false; break end
+      pos = found + 1
+    end
+    if ok then result[#result + 1] = rel end
+  end
+  return result
+end
+
 ---@param rels string[]
 ---@param query string
 ---@return {matched:string[], positions:integer[][]}
 local function match_fuzzy(rels, query)
-  local ok, result = pcall(vim.fn.matchfuzzypos, rels, query)
+  local candidates = fast_prefilter(rels, query)
+  local ok, result = pcall(vim.fn.matchfuzzypos, candidates, query)
   if not ok or type(result) ~= 'table' then
     return { matched = {}, positions = {} }
   end

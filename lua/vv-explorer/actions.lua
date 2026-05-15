@@ -310,6 +310,7 @@ local function refilter(state)
     end
     f.matched = Filter.match(f.index, f.index_rels, state.root.path, f.query, f.mode, state.opts.filter and state.opts.filter.max_results)
   end
+  f.searching = false
   Render.render(state) -- 更新 state.filter.match_count（仅过滤渲染会写）
   if f.on_redraw then pcall(f.on_redraw) end
 end
