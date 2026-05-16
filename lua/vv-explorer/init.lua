@@ -498,4 +498,10 @@ function M.focus()
   if M.is_open() then vim.api.nvim_set_current_win(state.win) end
 end
 
+function M.get_node_path()
+  if not state then return nil end
+  local node = Actions.node_under_cursor(state)
+  return node and node.path or nil
+end
+
 return M
