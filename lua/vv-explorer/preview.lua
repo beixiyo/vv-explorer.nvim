@@ -179,15 +179,38 @@ function M.attach(state)
     end,
   })
 
-  vim.api.nvim_create_autocmd('BufModifiedSet', {
-    group = aug,
-    callback = function(args)
-      if M._preview[state] == args.buf then
-        local ok, modified = pcall(function() return vim.bo[args.buf].modified end)
-        if ok and modified then M._preview[state] = nil end
-      end
-    end,
-  })
+  -- BufModifiedSet 在 0.13 中被移除，原因是它只在 redraw 时对当前 buffer 触发，
+  -- 导致 :wa 写入非当前 buffer 时事件延迟/丢失。0.13 改用 OptionSet modified，
+  -- 触发更及时且对所有 buffer 一致。
+  -- 见 https://github.com/neovim/neovim/pull/35610 (merged 2026-04-27, milestone 0.13)
+  if vim.fn.exists('##BufModifiedSet') == 1 then
+    vim.api.nvim_create_autocmd('BufModifiedSet', {
+      group = aug,
+      callback = function(args)
+        if M._preview[state] == args.buf then
+          local ok, modified = pcall(function() return vim.bo[args.buf].modified end)
+          if ok and modified then
+            vim.bo[args.buf].buflisted = true
+            M._preview[state] = nil
+          end
+        end
+      end,
+    })
+  else
+    vim.api.nvim_create_autocmd('OptionSet', {
+      group = aug,
+      pattern = 'modified',
+      callback = function(args)
+        -- OptionSet 的 args.buf 对 buffer-local 选项（如 modified）指向实际被改变的 buffer，
+        -- 相当于 Vimscript 的 expand('<abuf>')，比 nvim_get_current_buf() 更准确
+        local buf = (args.buf and args.buf > 0) and args.buf or vim.api.nvim_get_current_buf()
+        if M._preview[state] == buf and vim.bo[buf].modified then
+          vim.bo[buf].buflisted = true
+          M._preview[state] = nil
+        end
+      end,
+    })
+  end
 end
 
 ---@param state table
