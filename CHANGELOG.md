@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- **preview：导航时已打开的 buffer 从 bufferline 消失**：`nvim_win_set_buf` 触发 `BufWinEnter` autocmd，部分 bufferline 插件在其中将预览 buffer 强制设为 `buflisted = true`，导致其以「已升级」状态存入 `M._preview`；下次光标移走时，该 buffer 作为旧预览被 `nvim_buf_delete` 删除。修复：① `nvim_win_set_buf` 之后同步 + 异步（`vim.schedule`）两次强制还原 `buflisted = false`；② 在 `bufadd` 之后检查 `is_fixed`，已 listed 的 buffer（曾被 promote）不再纳入预览追踪；③ 删除旧预览时增加 `not buflisted` 守卫作为最后一道保险
 - **preview + image.nvim 兼容**：`nvim_win_set_buf` 不触发 `BufLeave`/`BufWinEnter`，导致 image.nvim 无法 hijack 图片 buffer、切走后旧图片不清除。现在对图片文件定向补发事件（通过 `nvim_win_call` 确保窗口上下文正确），非图片文件不受影响
 - **preview**：filetype 检测移到 `nvim_win_set_buf` 之后，修复 render-markdown 等插件在预览窗口不渲染的问题（根因：`FileType` 触发时 buffer 尚无归属窗口，插件 `buf.win(buf)` 返回 -1 导致初始渲染被跳过）
 - **perf**：HOME-as-repo 场景下 `git status --ignored` 递归扫全盘导致文件树卡 13s+，改用 `git ls-files --others --ignored --directory`（`--directory` 不递归进 ignored 目录，~20ms）

@@ -78,19 +78,38 @@ function M.preview_file(state, path)
   -- 用 bufadd + bufload，保留焦点在树窗口；窗口换 buf 不动焦点
   local target = vim.fn.bufadd(path)
   if target == 0 then return end
-  -- 预览状态保持 unlisted：避免污染 bufferline；复活已 bdelete 的旧 bufnr 时也不再
-  -- 被 tab 吸进去。用户按 <CR>/l/o 走 Preview.promote → 由 :edit 自然升级为 listed
-  vim.bo[target].buflisted = false
+  -- 已经是 listed 的 buf（用户之前用 l/CR 主动打开过）→ 固定 buf，不纳入预览追踪；
+  -- 否则保持 unlisted，避免污染 bufferline
+  local is_fixed = vim.bo[target].buflisted
+
+  if not is_fixed then
+    vim.bo[target].buflisted = false
+  end
   if not vim.api.nvim_buf_is_loaded(target) then
     vim.fn.bufload(target)
   end
 
   local ok = pcall(vim.api.nvim_win_set_buf, main, target)
   if not ok then return end
-  M._preview[state] = target
 
-  -- nvim_win_set_buf 不触发 BufLeave/BufWinEnter；
-  -- 仅对图片文件定向补发，避免对普通文件触发 LSP attach / auto-save 等重操作
+  -- nvim_win_set_buf 会触发 BufWinEnter 等 autocmd，某些 bufferline 插件会在其中
+  -- 把进入窗口的 buf 强制设为 listed。对非固定 buf 同步 + 调度两次还原 unlisted，
+  -- 覆盖同步和异步（vim.schedule）两种干扰路径。
+  if not is_fixed then
+    vim.bo[target].buflisted = false
+    vim.schedule(function()
+      if vim.api.nvim_buf_is_valid(target) and M._preview[state] == target then
+        vim.bo[target].buflisted = false
+      end
+    end)
+  end
+
+  -- 固定 buf 不追踪（不会被预览系统删除），但仍清理旧预览引用
+  M._preview[state] = is_fixed and nil or target
+
+  -- nvim_win_set_buf 会触发 BufWinEnter 但不触发 BufEnter；
+  -- 仅对图片文件补发 BufLeave/BufWinEnter 以确保 image.nvim 正常工作，
+  -- 普通文件不补发，避免触发 LSP attach / auto-save 等重操作
   if is_image(abs) or is_image(cur_buf_name) then
     pcall(vim.api.nvim_win_call, main, function()
       if vim.api.nvim_buf_is_valid(cur_buf) then
@@ -114,9 +133,11 @@ function M.preview_file(state, path)
   -- 不影响有内容/有名/被修改的 buffer；dashboard 等 bufhidden=wipe 的 buf 走自己的清理
   require('vv-utils.bufdelete').wipe_if_throwaway(cur_buf)
 
+  -- 双重保险：即使 bufferline 在 nvim_win_set_buf 期间把 old 重新 list 了，也不删
   if old and old ~= target
      and vim.api.nvim_buf_is_valid(old)
      and not vim.bo[old].modified
+     and not vim.bo[old].buflisted
      and not is_visible_elsewhere(old, state.win) then
     pcall(vim.api.nvim_buf_delete, old, { force = false })
   end
