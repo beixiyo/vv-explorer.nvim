@@ -60,10 +60,20 @@ local function is_visible_elsewhere(buf, tree_win)
   return false
 end
 
+---@param path string
+---@param opts table
+local function is_binary(path, opts)
+  local cfg = opts.binary
+  if not cfg or not cfg.intercept then return false end
+  local ext = path:match('%.([%w_]+)$')
+  return ext and cfg.extensions[ext:lower()] or false
+end
+
 ---@param state table
 ---@param path string
 function M.preview_file(state, path)
   if vim.fn.filereadable(path) == 0 then return end
+  if is_binary(path, state.opts) then return end
   local abs = vim.fn.fnamemodify(path, ':p')
   local main = M.find_main_win(state.win)
   if not main then return end

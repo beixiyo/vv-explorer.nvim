@@ -18,6 +18,16 @@ local M = {}
 -- 都假设 abs/rels/positions 是 list；统一空表后无需额外 nil 守卫
 local EMPTY_MATCHED = { abs = {}, rels = {}, positions = {}, total_count = 0 }
 
+---@param path string
+---@param opts VVExplorerConfig
+---@return boolean
+local function is_binary(path, opts)
+  local cfg = opts.binary
+  if not cfg or not cfg.intercept then return false end
+  local ext = path:match('%.([%w_]+)$')
+  return ext and cfg.extensions[ext:lower()] or false
+end
+
 -- ============ 选区 / 剪贴板辅助 ============
 -- state.selection: { [path] = true }，批量动作的作用集合
 -- state.clipboard: { mode = 'cut'|'copy', paths = string[] }，paste 时消费
@@ -144,6 +154,10 @@ end
 ---@param state table
 ---@param node table
 local function open_file(state, node)
+  if is_binary(node.path, state.opts) then
+    require('vv-utils.sys').open_default(node.path)
+    return
+  end
   Preview.promote(state)
   local main = Preview.find_main_win(state.win)
   if not main then
@@ -235,6 +249,10 @@ end
 local function open_in(state, cmd)
   local node = M.node_under_cursor(state)
   if not node or node.is_dir then return end
+  if is_binary(node.path, state.opts) then
+    require('vv-utils.sys').open_default(node.path)
+    return
+  end
   Preview.promote(state) -- 不删预览 buffer
   local main = Preview.find_main_win(state.win)
   if main and vim.api.nvim_win_is_valid(main) then

@@ -71,6 +71,16 @@ opts = {
     enabled = true,            -- LSP 诊断行尾符号（E/W/I/H）
   },
 
+  binary = {
+    intercept = true,          -- 拦截二进制文件：不在 nvim 打开，改用系统默认程序
+    extensions = {             -- 视为二进制的扩展名集合（小写 key）
+      -- 默认含：图片（png/jpg/gif/webp/…）、视频（mp4/mkv/mov/…）、
+      -- 音频（mp3/wav/flac/…）、压缩包（zip/tar/gz/7z/…）、
+      -- 编译产物（exe/dll/so/o/…）、字体（ttf/otf/woff/…）、
+      -- 二进制文档（pdf/docx/xlsx/pptx/…）、数据库（sqlite/db）
+    },
+  },
+
   trash = {
     enabled = true,            -- 删除时移入回收站而非真删
     max_items = 5000,          -- 回收站最大条目数，超出自动清理最旧的
@@ -109,6 +119,30 @@ opts = {
 | `trash.scan_on_open` | `true` | 是否启用启动时扫描 |
 
 设 `trash = false` 可完全禁用回收站。
+
+### 二进制文件拦截
+
+默认开启。`<CR>`/`l`/`o`/`<C-x>`/`<C-v>`/`<C-t>` 遇到二进制文件时，不在 nvim 内 `:edit`，改用系统默认程序打开；预览（`preview = true`）也会跳过二进制文件。
+
+```lua
+-- 放行图片（未来 nvim 原生支持图片预览时）
+opts = {
+  binary = {
+    extensions = {
+      png = false, jpg = false, jpeg = false,
+      gif = false, webp = false, avif = false,
+    },
+  },
+}
+
+-- 完全关闭拦截
+opts = { binary = { intercept = false } }
+
+-- 增加自定义扩展名
+opts = { binary = { extensions = { sketch = true } } }
+```
+
+`extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表。
 
 ### 自定义图标规则
 

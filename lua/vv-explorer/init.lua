@@ -50,6 +50,10 @@ local M = {}
 ---@field toggle string|false  打开/关闭文件树的全局键位（false 禁用）
 ---@field reveal string|false  展开到并高亮当前 buffer 对应文件的全局键位
 
+---@class VVExplorerBinaryConfig
+---@field intercept boolean 拦截二进制文件：不在 nvim 打开，改用系统默认程序
+---@field extensions table<string, boolean> 视为二进制的扩展名集合（小写 key）
+
 ---@class VVExplorerConfig
 ---@field position 'left'|'right'
 ---@field width integer
@@ -63,6 +67,7 @@ local M = {}
 ---@field filter VVExplorerFilterConfig
 ---@field git VVExplorerGitConfig
 ---@field diagnostics VVExplorerDiagnosticsConfig
+---@field binary VVExplorerBinaryConfig
 ---@field global_mappings VVExplorerGlobalMappings|false  全局快捷键（整个 nvim 范围）；设 false 禁用所有
 ---@field mappings table<string, string|false|fun(state:table)>  树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state）
 local defaults = {
@@ -78,6 +83,28 @@ local defaults = {
   filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },
   git = { enabled = true, show_ignored = false },
   diagnostics = { enabled = true },
+  binary = {
+    intercept = true,
+    extensions = {
+      -- image
+      png = true, jpg = true, jpeg = true, gif = true, webp = true, avif = true,
+      bmp = true, ico = true, tiff = true, tif = true, psd = true, raw = true,
+      -- video
+      mp4 = true, mkv = true, avi = true, mov = true, wmv = true, flv = true, webm = true,
+      -- audio
+      mp3 = true, wav = true, flac = true, aac = true, ogg = true, wma = true, m4a = true,
+      -- archive
+      zip = true, tar = true, gz = true, bz2 = true, xz = true, ['7z'] = true, rar = true, zst = true,
+      -- compiled / object
+      exe = true, dll = true, so = true, dylib = true, o = true, a = true, class = true, pyc = true,
+      -- font
+      ttf = true, otf = true, woff = true, woff2 = true, eot = true,
+      -- document (binary)
+      pdf = true, doc = true, docx = true, xls = true, xlsx = true, ppt = true, pptx = true,
+      -- database
+      sqlite = true, db = true,
+    },
+  },
   trash = {
     enabled = true,
     max_items = 5000,
