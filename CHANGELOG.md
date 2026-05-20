@@ -31,6 +31,12 @@
 
 ### Fixed
 
+- **filter：`I`（show_ignored=true）扫到 `~/Library/` 等系统目录**：原实现对 git repo 也走 `fd --no-ignore`，`~/.gitignore` 存在 `*` catch-all 规则时整个家目录都被扫入。改为两阶段策略：阶段一 `git ls-files` 取正常文件，阶段二 `git ls-files --ignored --directory` 列出 gitignored 目录后只递归含 `.git` 的嵌套 repo（如 `vendors/vv-*.nvim`），跳过无 `.git` 的系统目录
+
+- **filter：`show_ignored=false` 时 `vendors/vv-*.nvim` 等嵌套 git repo 仍出现在结果中**：`fd` 遇到含独立 `.git` 的子目录时会切换到该 repo 的 gitignore 上下文，导致父仓库的 ignore 规则失效。改用 `git ls-files --cached --others --exclude-standard` 替代 fd，git 原生正确处理嵌套 repo
+
+- **filter fuzzy：无斜杠 query 匹配全路径导致大量噪音**：搜索 `.gitignore`、`App.tsx` 等纯文件名时，`matchfuzzypos` 对完整相对路径打分，路径中散落的同字母字符得分异常高。改为：query 不含 `/` 时只对 basename 做 fuzzy（`match_fuzzy_basename`），命中后将 position 偏移回完整 rel 路径坐标保持高亮正确；query 含 `/` 时仍走全路径 fuzzy 并以 basename 命中优先排序
+
 - **preview：编辑预览文件后未自动提升为固定 buffer**：`BufModifiedSet`/`OptionSet modified` 回调只做了取消追踪（`M._preview[state] = nil`），漏掉了 `buflisted = true`，导致编辑后 buffer 不出现在 bufferline 里。修复：两个分支均补上 `buflisted = true`，与 `promote()` 行为对齐。此 bug 在 0.12 就存在，只是此次升级 nightly 时才被发现
 - **compat：Neovim 0.13 移除 `BufModifiedSet`**：0.13 nightly（[#35610](https://github.com/neovim/neovim/pull/35610)，2026-04-27）将 `BufModifiedSet` 替换为 `OptionSet modified`（原事件只在 redraw 时对当前 buffer 触发，`:wa` 写非当前 buffer 时延迟/丢失）。现用 `exists('##BufModifiedSet')` 运行时检测，0.12 走旧事件，0.13+ 走 `OptionSet`；`OptionSet` 回调改用 `args.buf`（对应 Vimscript `expand('<abuf>')`），比 `nvim_get_current_buf()` 更准确
 

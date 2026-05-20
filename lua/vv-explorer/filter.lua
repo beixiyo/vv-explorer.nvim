@@ -38,6 +38,114 @@ end
 ---@param on_done fun(paths: string[])  异步回调，paths 是绝对路径列表
 ---@return boolean ok  fd 不存在时返回 false，不会调 on_done
 function M.build_index(cwd, opts, on_done)
+  local hidden       = opts and opts.hidden
+  local show_ignored = opts and opts.show_ignored
+  local custom       = opts and opts.custom or {}
+
+  local git_root = vim.trim(vim.fn.system(
+    'git -C ' .. vim.fn.shellescape(cwd) .. ' rev-parse --show-toplevel 2>/dev/null'
+  ))
+  local in_git = git_root ~= ''
+
+  -- show_ignored=false + inside a git repo → use git ls-files.
+  -- fd cannot handle nested git repos: when a subdir has its own .git, fd
+  -- switches to that repo's gitignore and ignores the parent repo's rules.
+  -- git ls-files is gitignore-aware by design and handles this correctly.
+  if in_git and not show_ignored then
+    local rel = (git_root ~= cwd) and cwd:sub(#git_root + 2) or ''
+    local cmd = {
+      'git', '-C', git_root, 'ls-files',
+      '--cached', '--others', '--exclude-standard', '--full-name',
+    }
+    for _, pat in ipairs(custom) do
+      cmd[#cmd + 1] = '--exclude=' .. pat
+    end
+    if rel ~= '' then cmd[#cmd + 1] = '--'; cmd[#cmd + 1] = rel end
+
+    vim.system(cmd, { text = true }, vim.schedule_wrap(function(r)
+      local paths, is_dir_map = {}, {}
+      if r.code == 0 and r.stdout then
+        for line in r.stdout:gmatch('[^\n]+') do
+          paths[#paths + 1] = git_root .. '/' .. line
+        end
+      end
+      on_done(paths, is_dir_map)
+    end))
+    return true
+  end
+
+  -- show_ignored=true inside git: two-pass.
+  -- Phase 1 = same ls-files set as show_ignored=false.
+  -- Phase 2 = scan only gitignored dirs that are nested git repos (.git present).
+  -- This prevents catch-all gitignore rules (e.g. '*' in ~/.gitignore) from
+  -- pulling in system directories like ~/Library/ that happen to be gitignored.
+  if in_git then
+    local rel = (git_root ~= cwd) and cwd:sub(#git_root + 2) or ''
+    local phase1_cmd = {
+      'git', '-C', git_root, 'ls-files',
+      '--cached', '--others', '--exclude-standard', '--full-name',
+    }
+    for _, pat in ipairs(custom) do
+      phase1_cmd[#phase1_cmd + 1] = '--exclude=' .. pat
+    end
+    if rel ~= '' then phase1_cmd[#phase1_cmd + 1] = '--'; phase1_cmd[#phase1_cmd + 1] = rel end
+
+    vim.system(phase1_cmd, { text = true }, vim.schedule_wrap(function(r1)
+      local phase1_paths = {}
+      if r1.code == 0 and r1.stdout then
+        for line in r1.stdout:gmatch('[^\n]+') do
+          phase1_paths[#phase1_paths + 1] = git_root .. '/' .. line
+        end
+      end
+
+      local phase2_cmd = {
+        'git', '-C', git_root, 'ls-files',
+        '--others', '--ignored', '--exclude-standard', '--directory', '--full-name',
+      }
+      if rel ~= '' then phase2_cmd[#phase2_cmd + 1] = '--'; phase2_cmd[#phase2_cmd + 1] = rel end
+
+      vim.system(phase2_cmd, { text = true }, vim.schedule_wrap(function(r2)
+        local nested_repos = {}
+        if r2.code == 0 and r2.stdout then
+          for line in r2.stdout:gmatch('[^\n]+') do
+            local dir = line:sub(-1) == '/' and line:sub(1, -2) or line
+            local abs_dir = git_root .. '/' .. dir
+            if vim.uv.fs_stat(abs_dir .. '/.git') then
+              nested_repos[#nested_repos + 1] = abs_dir
+            end
+          end
+        end
+
+        if #nested_repos == 0 then
+          on_done(phase1_paths, {})
+          return
+        end
+
+        local all_paths = {}
+        for _, p in ipairs(phase1_paths) do all_paths[#all_paths + 1] = p end
+
+        local pending = #nested_repos
+        for _, repo_dir in ipairs(nested_repos) do
+          vim.system(
+            { 'git', '-C', repo_dir, 'ls-files', '--cached', '--others', '--exclude-standard' },
+            { text = true },
+            vim.schedule_wrap(function(r3)
+              if r3.code == 0 and r3.stdout then
+                for line in r3.stdout:gmatch('[^\n]+') do
+                  all_paths[#all_paths + 1] = repo_dir .. '/' .. line
+                end
+              end
+              pending = pending - 1
+              if pending == 0 then on_done(all_paths, {}) end
+            end)
+          )
+        end
+      end))
+    end))
+    return true
+  end
+
+  -- Fallback: fd for non-git directories
   if vim.fn.executable('fd') ~= 1 then
     vim.notify(
       "vv-explorer: filter requires 'fd' (not found in $PATH).\n" ..
@@ -52,39 +160,27 @@ function M.build_index(cwd, opts, on_done)
   end
 
   local cmd = { 'fd', '--type', 'f', '--type', 'd' }
-  if opts and opts.hidden then cmd[#cmd + 1] = '--hidden' end
-  if opts and opts.show_ignored then cmd[#cmd + 1] = '--no-ignore' end
-  cmd[#cmd + 1] = '--exclude'
-  cmd[#cmd + 1] = '.git'
-  if opts and opts.custom then
-    for _, glob in ipairs(opts.custom) do
-      cmd[#cmd + 1] = '--exclude'
-      cmd[#cmd + 1] = glob
-    end
+  if hidden then cmd[#cmd + 1] = '--hidden' end
+  if show_ignored then cmd[#cmd + 1] = '--no-ignore' end
+  cmd[#cmd + 1] = '--exclude'; cmd[#cmd + 1] = '.git'
+  for _, pat in ipairs(custom) do
+    cmd[#cmd + 1] = '--exclude'; cmd[#cmd + 1] = pat
   end
   cmd[#cmd + 1] = '.'
-  cmd[#cmd + 1] = cwd
 
-  vim.system(
-    cmd,
-    { text = true },
-    vim.schedule_wrap(function(r)
-      local paths = {}
-      local is_dir_map = {}
-      if r.code == 0 and r.stdout then
-        for line in r.stdout:gmatch('[^\n]+') do
-          local is_dir = false
-          if line:sub(-1) == '/' then 
-            line = line:sub(1, -2) 
-            is_dir = true
-          end
-          paths[#paths + 1] = line
-          if is_dir then is_dir_map[line] = true end
-        end
+  vim.system(cmd, { text = true, cwd = cwd }, vim.schedule_wrap(function(r)
+    local paths, is_dir_map = {}, {}
+    if r.code == 0 and r.stdout then
+      for line in r.stdout:gmatch('[^\n]+') do
+        local is_dir = line:sub(-1) == '/'
+        if is_dir then line = line:sub(1, -2) end
+        local abs = cwd .. '/' .. line
+        paths[#paths + 1] = abs
+        if is_dir then is_dir_map[abs] = true end
       end
-      on_done(paths, is_dir_map)
-    end)
-  )
+    end
+    on_done(paths, is_dir_map)
+  end))
   return true
 end
 
@@ -123,16 +219,115 @@ local function fast_prefilter(rels, query)
   return result
 end
 
+-- query 无 '/' → 仅对 basename 做 fuzzy，彻底消除目录噪音。
+-- positions 从 basename 空间偏移回完整 rel 空间，高亮仍正确。
+-- 同名 basename 用 queue 按原始顺序映射回对应 rel。
+local function match_fuzzy_basename(rels, query)
+  local c_bn, c_off, c_rel = {}, {}, {}
+
+  local ql = query:lower()
+  local qchars = {}
+  for i = 1, #ql do qchars[i] = ql:sub(i, i) end
+  local qlen = #qchars
+
+  for _, rel in ipairs(rels) do
+    local slash = rel:find('/[^/]*$')          -- 1-based index of last '/'
+    local bn  = slash and rel:sub(slash + 1) or rel
+    local off = slash or 0                     -- 0-based start of basename in rel
+    -- prefilter on basename
+    local bnl = bn:lower()
+    local pos, ok = 1, true
+    for j = 1, qlen do
+      local found = bnl:find(qchars[j], pos, true)
+      if not found then ok = false; break end
+      pos = found + 1
+    end
+    if ok then
+      c_bn[#c_bn + 1] = bn
+      c_off[#c_off + 1] = off
+      c_rel[#c_rel + 1] = rel
+    end
+  end
+
+  if #c_bn == 0 then return { matched = {}, positions = {} } end
+
+  local ok, result = pcall(vim.fn.matchfuzzypos, c_bn, query)
+  if not ok or type(result) ~= 'table' then
+    return { matched = {}, positions = {} }
+  end
+
+  local matched_bns = result[1] or {}
+  local raw_pos     = result[2] or {}
+
+  -- Build per-basename queues: handles duplicate basenames (e.g. multiple index.lua).
+  -- matchfuzzypos may return the same basename string N times; pop queues in order.
+  local queues = {}
+  for i, bn in ipairs(c_bn) do
+    if not queues[bn] then queues[bn] = {} end
+    queues[bn][#queues[bn] + 1] = { rel = c_rel[i], off = c_off[i] }
+  end
+
+  local m, p = {}, {}
+  for i, bn in ipairs(matched_bns) do
+    local q = queues[bn]
+    if q and #q > 0 then
+      local entry = table.remove(q, 1)
+      m[#m + 1] = entry.rel
+      local adj = {}
+      for _, pp in ipairs(raw_pos[i] or {}) do
+        adj[#adj + 1] = pp + entry.off   -- offset into full rel
+      end
+      p[#p + 1] = adj
+    end
+  end
+
+  return { matched = m, positions = p }
+end
+
 ---@param rels string[]
 ---@param query string
 ---@return {matched:string[], positions:integer[][]}
 local function match_fuzzy(rels, query)
+  -- No '/' → basename-only (场景: "App.tsx", ".gitignore", 模糊文件名)
+  if not query:find('/', 1, true) then
+    return match_fuzzy_basename(rels, query)
+  end
+
+  -- Has '/' → full-path fuzzy (场景: "src/Button", "src/compnts/Button" 跨段/错拼)
   local candidates = fast_prefilter(rels, query)
   local ok, result = pcall(vim.fn.matchfuzzypos, candidates, query)
   if not ok or type(result) ~= 'table' then
     return { matched = {}, positions = {} }
   end
-  return { matched = result[1] or {}, positions = result[2] or {} }
+
+  local matched   = result[1] or {}
+  local positions = result[2] or {}
+
+  -- Re-rank: basename matches sort first (fzf --scheme=path behaviour)
+  local bn_m, bn_p   = {}, {}
+  local path_m, path_p = {}, {}
+
+  for i, rel in ipairs(matched) do
+    local slash    = rel:find('/[^/]*$')
+    local bn_start = slash or 0
+    local pos      = positions[i] or {}
+    local in_bn    = true
+    for _, pp in ipairs(pos) do
+      if pp < bn_start then in_bn = false; break end
+    end
+    if in_bn then
+      bn_m[#bn_m + 1] = rel;   bn_p[#bn_p + 1] = pos
+    else
+      path_m[#path_m + 1] = rel; path_p[#path_p + 1] = pos
+    end
+  end
+
+  local m, p = {}, {}
+  for i = 1, #bn_m   do m[i]        = bn_m[i];   p[i]        = bn_p[i]   end
+  local off = #bn_m
+  for i = 1, #path_m do m[off + i]  = path_m[i]; p[off + i]  = path_p[i] end
+
+  return { matched = m, positions = p }
 end
 
 ---@param rels string[]
