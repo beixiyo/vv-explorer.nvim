@@ -255,6 +255,9 @@ local function apply_keymaps(s)
     end
   end
 
+  -- 屏蔽 visual 选区：v/V 在 nofile buffer 里无意义，<C-v> 已映射为 open_vsplit 不动
+  vim.keymap.set('n', 'v', '<Nop>', { buffer = s.buf, silent = true })
+  vim.keymap.set('n', 'V', '<Nop>', { buffer = s.buf, silent = true })
   -- 屏蔽默认右键 visual 选区行为（含双击/三击）
   for _, key in ipairs({ '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
     vim.keymap.set({ 'n', 'x' }, key, '<Nop>', { buffer = s.buf, silent = true })

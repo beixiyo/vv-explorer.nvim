@@ -529,15 +529,19 @@ function M.clear_selection(state)
   Render.render(state)
 end
 
--- <Esc> 的统一行为：filter > selection > close
+-- <Esc> 的统一行为：filter > clipboard + selection（一起清）> close
 ---@param state table
 function M.escape(state)
   if state.filter and state.filter.active then
     M.clear_filter(state)
     return
   end
-  if state.selection and next(state.selection) then
-    M.clear_selection(state)
+  local has_clipboard = state.clipboard and #state.clipboard.paths > 0
+  local has_selection = state.selection and next(state.selection)
+  if has_clipboard or has_selection then
+    state.clipboard = nil
+    state.selection = {}
+    Render.render(state)
     return
   end
   vim.cmd('VVExplorerClose')

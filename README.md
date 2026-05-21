@@ -169,7 +169,7 @@ icon_rules = {
 | `=` | `cd_to` | 把光标目录设为根 |
 | `-` | `cd_up` | 返回上级 |
 | `/` | `start_filter` | 打开过滤提示框 |
-| `<Esc>` | `escape` | 清 filter → 清选区 → 关树 |
+| `<Esc>` | `escape` | 清 filter → 清选区 + 剪贴板标记（一起清）→ 关树 |
 | `q` | `__quit` | 清 filter 或关树 |
 | `.` / `<M-.>` | `toggle_hidden` | 切换 dotfile 显隐 |
 | `I` / `<M-i>` | `toggle_gitignored` | 切换 gitignored 显隐 |
