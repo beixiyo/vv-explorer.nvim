@@ -89,14 +89,19 @@ local defaults = {
       -- image
       png = true, jpg = true, jpeg = true, gif = true, webp = true, avif = true,
       bmp = true, ico = true, tiff = true, tif = true, psd = true, raw = true,
+      heic = true, heif = true, svgz = true,
       -- video
       mp4 = true, mkv = true, avi = true, mov = true, wmv = true, flv = true, webm = true,
       -- audio
       mp3 = true, wav = true, flac = true, aac = true, ogg = true, wma = true, m4a = true,
       -- archive
-      zip = true, tar = true, gz = true, bz2 = true, xz = true, ['7z'] = true, rar = true, zst = true,
+      zip = true, tar = true, gz = true, tgz = true, bz2 = true, tbz2 = true, xz = true, txz = true,
+      ['7z'] = true, rar = true, zst = true, lz4 = true, lzma = true,
+      jar = true, war = true, ear = true,
+      deb = true, rpm = true, dmg = true, iso = true, apk = true, ipa = true,
       -- compiled / object
       exe = true, dll = true, so = true, dylib = true, o = true, a = true, class = true, pyc = true,
+      wasm = true, bin = true,
       -- font
       ttf = true, otf = true, woff = true, woff2 = true, eot = true,
       -- document (binary)
