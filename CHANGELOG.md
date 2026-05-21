@@ -35,6 +35,8 @@
 
 ### Fixed
 
+- **filter：`I`（show_ignored=true）仍搜不到个别 gitignored 文件**：两阶段策略的阶段二只处理以 `/` 结尾的目录行（嵌套 git repo 检测），非 `/` 结尾的个别 gitignored 文件（如 `.zsh/secret.zsh`）被直接丢弃。现在将这类行收集为 individually-ignored 文件直接加入结果，无需嵌套 repo 即可在 `/` filter 中搜到
+
 - **filter：`I`（show_ignored=true）扫到 `~/Library/` 等系统目录**：原实现对 git repo 也走 `fd --no-ignore`，`~/.gitignore` 存在 `*` catch-all 规则时整个家目录都被扫入。改为两阶段策略：阶段一 `git ls-files` 取正常文件，阶段二 `git ls-files --ignored --directory` 列出 gitignored 目录后只递归含 `.git` 的嵌套 repo（如 `vendors/vv-*.nvim`），跳过无 `.git` 的系统目录
 
 - **filter：`show_ignored=false` 时 `vendors/vv-*.nvim` 等嵌套 git repo 仍出现在结果中**：`fd` 遇到含独立 `.git` 的子目录时会切换到该 repo 的 gitignore 上下文，导致父仓库的 ignore 规则失效。改用 `git ls-files --cached --others --exclude-standard` 替代 fd，git 原生正确处理嵌套 repo

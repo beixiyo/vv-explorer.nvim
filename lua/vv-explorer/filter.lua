@@ -106,23 +106,31 @@ function M.build_index(cwd, opts, on_done)
 
       vim.system(phase2_cmd, { text = true }, vim.schedule_wrap(function(r2)
         local nested_repos = {}
+        -- Lines not ending in '/' are individually gitignored files (not inside a
+        -- fully-ignored directory), e.g. ".zsh/secret.zsh". Collect them directly.
+        local individually_ignored = {}
         if r2.code == 0 and r2.stdout then
           for line in r2.stdout:gmatch('[^\n]+') do
-            local dir = line:sub(-1) == '/' and line:sub(1, -2) or line
-            local abs_dir = git_root .. '/' .. dir
-            if vim.uv.fs_stat(abs_dir .. '/.git') then
-              nested_repos[#nested_repos + 1] = abs_dir
+            if line:sub(-1) == '/' then
+              local dir = line:sub(1, -2)
+              local abs_dir = git_root .. '/' .. dir
+              if vim.uv.fs_stat(abs_dir .. '/.git') then
+                nested_repos[#nested_repos + 1] = abs_dir
+              end
+            else
+              individually_ignored[#individually_ignored + 1] = git_root .. '/' .. line
             end
           end
         end
 
-        if #nested_repos == 0 then
-          on_done(phase1_paths, {})
-          return
-        end
-
         local all_paths = {}
         for _, p in ipairs(phase1_paths) do all_paths[#all_paths + 1] = p end
+        for _, p in ipairs(individually_ignored) do all_paths[#all_paths + 1] = p end
+
+        if #nested_repos == 0 then
+          on_done(all_paths, {})
+          return
+        end
 
         local pending = #nested_repos
         for _, repo_dir in ipairs(nested_repos) do
