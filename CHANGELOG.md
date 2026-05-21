@@ -35,6 +35,8 @@
 
 ### Fixed
 
+- **preview：reveal / open 时主窗口被意外切换为预览**：复用旧 buffer（场景 A）时，`Render.render` → `nvim_buf_set_lines` 替换全部行可能 clamp cursor 到已变更的行号，触发 `CursorMoved` → `preview_file` 将主窗口切到非目标文件。修复：`M.open()` / `M.reveal()` 期间设 `state._skip_preview` 标志阻止 preview 回调；`preview_file` 路径比对加 `vim.fs.normalize` 归一化防止符号链接等微妙路径差异
+
 - **filter：`I`（show_ignored=true）仍搜不到个别 gitignored 文件**：两阶段策略的阶段二只处理以 `/` 结尾的目录行（嵌套 git repo 检测），非 `/` 结尾的个别 gitignored 文件（如 `.zsh/secret.zsh`）被直接丢弃。现在将这类行收集为 individually-ignored 文件直接加入结果，无需嵌套 repo 即可在 `/` filter 中搜到
 
 - **filter：`I`（show_ignored=true）扫到 `~/Library/` 等系统目录**：原实现对 git repo 也走 `fd --no-ignore`，`~/.gitignore` 存在 `*` catch-all 规则时整个家目录都被扫入。改为两阶段策略：阶段一 `git ls-files` 取正常文件，阶段二 `git ls-files --ignored --directory` 列出 gitignored 目录后只递归含 `.git` 的嵌套 repo（如 `vendors/vv-*.nvim`），跳过无 `.git` 的系统目录

@@ -414,8 +414,10 @@ function M.open(opts)
     local win, prev = Window.open_split(state.buf, state.opts or config)
     state.win = win
     state.prev_win = prev
+    state._skip_preview = true
     Tree.refresh(state.root) -- 隐藏期间 fs_event 一直在跑，多一次 refresh 也 cheap
     Render.render(state)
+    state._skip_preview = nil
     vim.api.nvim_create_autocmd('WinClosed', {
       pattern = tostring(win),
       once = true,
@@ -457,7 +459,9 @@ function M.open(opts)
   if config.git.enabled then Git.attach(state) end
   if config.diagnostics.enabled then Diagnostics.attach(state) end
 
+  state._skip_preview = true
   Render.render(state)
+  state._skip_preview = nil
 
   if config.trash.enabled and config.trash.scan_on_open then
     Trash.scan_size(function(bytes)
@@ -512,6 +516,7 @@ function M.reveal(opts)
   if not M.is_open() then M.open() end
   if not state then return end
 
+  state._skip_preview = true
   if Tree.expand_to(state.root, file) then
     Render.render(state)
     -- 找最深的可达行（reveal target 可能被分组合并到上层）
@@ -528,6 +533,7 @@ function M.reveal(opts)
       vim.api.nvim_win_set_cursor(state.win, { lnum, 0 })
     end
   end
+  state._skip_preview = nil
   M.focus()
 end
 

@@ -74,13 +74,13 @@ end
 function M.preview_file(state, path)
   if vim.fn.filereadable(path) == 0 then return end
   if is_binary(path, state.opts) then return end
-  local abs = vim.fn.fnamemodify(path, ':p')
+  local abs = vim.fs.normalize(vim.fn.fnamemodify(path, ':p'))
   local main = M.find_main_win(state.win)
   if not main then return end
   if not vim.api.nvim_win_is_valid(main) then return end
 
   local cur_buf = vim.api.nvim_win_get_buf(main)
-  local cur_buf_name = vim.api.nvim_buf_get_name(cur_buf)
+  local cur_buf_name = vim.fs.normalize(vim.api.nvim_buf_get_name(cur_buf))
   if cur_buf_name == abs then return end
 
   local old = M._preview[state]
@@ -182,6 +182,7 @@ function M.attach(state)
     group = aug,
     buffer = state.buf,
     callback = function()
+      if state._skip_preview then return end
       if vim.api.nvim_get_current_win() ~= state.win then return end
       local node = require('vv-explorer.actions').node_under_cursor(state)
       if not node or node.is_dir then return end
