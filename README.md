@@ -52,6 +52,7 @@ opts = {
   group_empty_dirs = true,     -- 单链目录合并
   preview = true,              -- VSCode 风单击预览
   watch = true,                -- libuv fs_event 自动刷新
+  select_move_down = false,    -- Tab 多选后自动将光标下移一行
   cwd = nil,                   -- 根目录（nil = vim.fn.getcwd()）
   icon_rules = {},             -- 自定义图标规则
 

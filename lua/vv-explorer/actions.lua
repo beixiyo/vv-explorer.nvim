@@ -514,10 +514,12 @@ function M.toggle_select(state)
   end
   Render.render(state)
 
-  local last = vim.api.nvim_buf_line_count(state.buf)
-  local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
-  if lnum < last then
-    vim.api.nvim_win_set_cursor(state.win, { lnum + 1, 0 })
+  if state.opts.select_move_down ~= false then
+    local last = vim.api.nvim_buf_line_count(state.buf)
+    local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+    if lnum < last then
+      vim.api.nvim_win_set_cursor(state.win, { lnum + 1, 0 })
+    end
   end
 end
 

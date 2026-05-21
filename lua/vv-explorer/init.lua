@@ -68,6 +68,7 @@ local M = {}
 ---@field git VVExplorerGitConfig
 ---@field diagnostics VVExplorerDiagnosticsConfig
 ---@field binary VVExplorerBinaryConfig
+---@field select_move_down boolean  多选时 Tab 切换选中后自动将光标下移一行（默认 true）
 ---@field global_mappings VVExplorerGlobalMappings|false  全局快捷键（整个 nvim 范围）；设 false 禁用所有
 ---@field mappings table<string, string|false|fun(state:table)>  树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state）
 local defaults = {
@@ -78,6 +79,7 @@ local defaults = {
   preview = true,
   watch = true,
   follow_file = true,
+  select_move_down = false,
   cwd = nil,
   icon_rules = {},
   filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },
