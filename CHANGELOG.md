@@ -25,13 +25,23 @@
 
 - **宽度持久化**：调整文件树宽度后跨 session 记住，通过 `WinResized` 实时跟踪 + `VimLeavePre` 写入 `stdpath('data')/vv-explorer.json`
 
+- **剪贴板 toggle 累加**：`x`/`y` 不再替换剪贴板，而是 toggle 当前文件进/出剪贴板——连按多个文件的 `x` 即可批量标记剪切，再按一次取消。Tab 多选后按 `x`/`y` 仍为批量替换
+
 ### Changed
+
+- **移除 `<C-t>` open_tab**：新 tab 打开文件脱离 explorer 上下文，实际无人使用。action 函数一并移除
 
 - **图标路由优化**：重构 `icons.lua`，优先通过 `vv-icons` 获取增强的状态图标，并保持对全局 `_G.MiniIcons` 的标准兼容
 - **键位**：`cd_to` 从 `<C-]>` 改为 `=`（与 `-`（cd_up）对称配对）
 - **过滤索引**：尊重 `show_ignored`（传 `--no-ignore` 给 fd）和 `filter.custom` glob（传 `--exclude`）
 - **过滤失效**：切换 hidden（`.`）或 gitignored（`I`）后自动失效过滤索引，下次 `/` 用新配置重建
 - **粘贴**：粘贴后始终清空剪贴板（之前仅 cut 模式清空，copy 模式可重复粘贴）
+
+### Refactored
+
+- **actions.lua 拆分为 actions/ 子模块**（826 → 5 文件，最大 264 行）：`helpers.lua`（共享辅助）、`navigation.lua`（导航/选区/滚动）、`crud.lua`（CRUD + 剪贴板）、`filter.lua`（过滤操作）、`init.lua`（facade）。对外 API 不变
+
+- **prompt.lua `vim.wo` → `scope='local'`**：浮窗选项设置不再污染全局默认值（与 vv-utils.ui_window 同步修复）
 
 ### Fixed
 

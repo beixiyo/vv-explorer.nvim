@@ -155,7 +155,6 @@ local defaults = {
     -- 打开方式
     ['<C-x>'] = 'open_split',
     ['<C-v>'] = 'open_vsplit',
-    ['<C-t>'] = 'open_tab',
     ['gx']    = 'system_open',
     -- CRUD
     ['a']     = 'create',      -- 新建，尾随 '/' 视为目录

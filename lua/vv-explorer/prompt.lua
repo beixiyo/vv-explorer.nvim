@@ -64,10 +64,11 @@ local function setup_floating_window(state, initial)
     zindex = 50,
   })
 
-  vim.wo[win].winhighlight = 'Normal:NormalFloat'
-  vim.wo[win].signcolumn = 'no'
-  vim.wo[win].number = false
-  vim.wo[win].cursorline = false
+  local api = vim.api
+  api.nvim_set_option_value('winhighlight', 'Normal:NormalFloat', { win = win, scope = 'local' })
+  api.nvim_set_option_value('signcolumn', 'no', { win = win, scope = 'local' })
+  api.nvim_set_option_value('number', false, { win = win, scope = 'local' })
+  api.nvim_set_option_value('cursorline', false, { win = win, scope = 'local' })
   return buf, win
 end
 

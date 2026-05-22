@@ -18,7 +18,6 @@ local ACTIONS = {
   help              = { cat = 'View',      icon = '' },
   open_split        = { cat = 'Open as',   icon = '' },
   open_vsplit       = { cat = 'Open as',   icon = '' },
-  open_tab          = { cat = 'Open as',   icon = '󰓩' },
   system_open       = { cat = 'Open as',   icon = '' },
   yank_abs_path     = { cat = 'Yank',      icon = '' },
   create            = { cat = 'Modify',    icon = '' },
