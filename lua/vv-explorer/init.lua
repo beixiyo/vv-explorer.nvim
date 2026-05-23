@@ -34,43 +34,43 @@ local Trash = require('vv-explorer.trash')
 local M = {}
 
 ---@class VVExplorerFilterConfig
----@field custom string[] 永久隐藏的 glob 列表（独立于 `.` toggle），如 {'node_modules', '.DS_Store'}
----@field max_results integer 最大搜索结果数，避免渲染卡死
----@field debounce_threshold integer 文件数达到此阈值时开始动态防抖（默认 5000，以下 0ms）
----@field debounce_max_ms integer 防抖延迟的最高封顶值（毫秒，默认 500）
+---@field custom string[] 永久隐藏的 glob 列表（独立于 `.` toggle），如 {'node_modules', '.DS_Store'} @default {}
+---@field max_results integer 最大搜索结果数，避免渲染卡死 @default 1000
+---@field debounce_threshold integer 文件数达到此阈值时开始动态防抖（默认 5000，以下 0ms） @default 5000
+---@field debounce_max_ms integer 防抖延迟的最高封顶值（毫秒，默认 500） @default 500
 
 ---@class VVExplorerGitConfig
----@field enabled boolean 启用 git 状态索引（走 `git status --porcelain --ignored`，非 git 仓库自动 no-op）
----@field show_ignored boolean 是否显示 .gitignore 命中的路径（`I` 键切换）
+---@field enabled boolean 启用 git 状态索引（走 `git status --porcelain --ignored`，非 git 仓库自动 no-op） @default true
+---@field show_ignored boolean 是否显示 .gitignore 命中的路径（`I` 键切换） @default false
 
 ---@class VVExplorerDiagnosticsConfig
----@field enabled boolean 订阅 LSP 诊断并在行尾显示 E/W/I/H 符号
+---@field enabled boolean 订阅 LSP 诊断并在行尾显示 E/W/I/H 符号 @default true
 
 ---@class VVExplorerGlobalMappings
----@field toggle string|false  打开/关闭文件树的全局键位（false 禁用）
----@field reveal string|false  展开到并高亮当前 buffer 对应文件的全局键位
+---@field toggle string|false  打开/关闭文件树的全局键位（false 禁用） @default '<leader>E'
+---@field reveal string|false  展开到并高亮当前 buffer 对应文件的全局键位 @default '<leader>e'
 
 ---@class VVExplorerBinaryConfig
----@field intercept boolean 拦截二进制文件：不在 nvim 打开，改用系统默认程序
----@field extensions table<string, boolean> 视为二进制的扩展名集合（小写 key）
+---@field intercept boolean 拦截二进制文件：不在 nvim 打开，改用系统默认程序 @default true
+---@field extensions table<string, boolean> 视为二进制的扩展名集合（小写 key） @default { png = true, jpg = true, ... }
 
 ---@class VVExplorerConfig
----@field position 'left'|'right'
----@field width integer
----@field hidden boolean 显示 dotfile（`.` 开头）
----@field group_empty_dirs boolean 单链 dir 合并显示
----@field preview boolean VSCode 风单击预览
----@field watch boolean libuv fs_event 自动刷新
----@field follow_file boolean 切换 buffer 时自动在树中展开并高亮对应文件（不抢焦点）
----@field cwd string? 默认根目录（nil → vim.fn.getcwd()）
----@field icon_rules VVExplorerIconRule[]
----@field filter VVExplorerFilterConfig
----@field git VVExplorerGitConfig
----@field diagnostics VVExplorerDiagnosticsConfig
----@field binary VVExplorerBinaryConfig
----@field select_move_down boolean  多选时 Tab 切换选中后自动将光标下移一行（默认 true）
----@field global_mappings VVExplorerGlobalMappings|false  全局快捷键（整个 nvim 范围）；设 false 禁用所有
----@field mappings table<string, string|false|fun(state:table)>  树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state）
+---@field position 'left'|'right' @default 'left'
+---@field width integer @default 32
+---@field hidden boolean 显示 dotfile（`.` 开头） @default false
+---@field group_empty_dirs boolean 单链 dir 合并显示 @default true
+---@field preview boolean VSCode 风单击预览 @default true
+---@field watch boolean libuv fs_event 自动刷新 @default true
+---@field follow_file boolean 切换 buffer 时自动在树中展开并高亮对应文件（不抢焦点） @default true
+---@field cwd string? 默认根目录（nil → vim.fn.getcwd()） @default nil
+---@field icon_rules VVExplorerIconRule[] @default {}
+---@field filter VVExplorerFilterConfig @default { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 }
+---@field git VVExplorerGitConfig @default { enabled = true, show_ignored = false }
+---@field diagnostics VVExplorerDiagnosticsConfig @default { enabled = true }
+---@field binary VVExplorerBinaryConfig @default { intercept = true, extensions = { ... } }
+---@field select_move_down boolean  多选时 Tab 切换选中后自动将光标下移一行（默认 true） @default false
+---@field global_mappings VVExplorerGlobalMappings|false  全局快捷键（整个 nvim 范围）；设 false 禁用所有 @default { toggle = '<leader>E', reveal = '<leader>e' }
+---@field mappings table<string, string|false|fun(state:table)>  树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state） @default { ... }
 local defaults = {
   position = 'left',
   width = 32,
