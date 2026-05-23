@@ -499,7 +499,7 @@ end
 
 ---@param opts {file?:string}?
 function M.reveal(opts)
-  if M.is_open() and state and vim.api.nvim_get_current_win() == state.win then
+  if M.is_open() then
     M.close()
     return
   end
