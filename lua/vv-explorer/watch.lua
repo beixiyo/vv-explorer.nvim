@@ -24,7 +24,7 @@ function M.attach(state)
       if state.git and state.git.refresh then state.git.refresh() end
       -- 但 render 只在 window 有效时做（hide 期间没窗口，render 没意义）
       if state.win and vim.api.nvim_win_is_valid(state.win) then
-        Render.render(state)
+        Render.render_stable(state)
       end
     end))
   end

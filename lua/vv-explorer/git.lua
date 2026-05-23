@@ -25,7 +25,7 @@ function M.attach(state)
 
   local function rerender()
     if state.win and vim.api.nvim_win_is_valid(state.win) then
-      require('vv-explorer.render').render(state)
+      require('vv-explorer.render').render_stable(state)
     end
   end
 

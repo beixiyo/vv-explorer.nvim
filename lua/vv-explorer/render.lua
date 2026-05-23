@@ -257,6 +257,36 @@ function M.render(state)
   end
 end
 
+function M.render_stable(state)
+  if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then
+    return M.render(state)
+  end
+
+  local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+  local prev_path
+  local f = state.filter
+  if f and f.active and (f.query or '') ~= '' then
+    local row = state.rows and state.rows[lnum]
+    prev_path = row and row.node and row.node.path
+  elseif lnum == 1 then
+    prev_path = state.root and state.root.path
+  elseif state.rows then
+    local row = state.rows[lnum - 1]
+    prev_path = row and row.node and row.node.path
+  end
+
+  state._skip_preview = true
+  M.render(state)
+
+  if prev_path and state.path_to_row then
+    local new_lnum = state.path_to_row[prev_path]
+    if new_lnum then
+      pcall(vim.api.nvim_win_set_cursor, state.win, { new_lnum, 0 })
+    end
+  end
+  state._skip_preview = nil
+end
+
 -- 过滤模式渲染：平铺显示 matches + 祖先链，match 字符高亮
 ---@param state table
 function M.render_filter(state)
