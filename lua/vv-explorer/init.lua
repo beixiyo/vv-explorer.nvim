@@ -400,6 +400,17 @@ local function close_window_only()
   state.path_to_row = nil
 end
 
+local function is_sole_window()
+  if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then return false end
+  local tab = vim.api.nvim_win_get_tabpage(state.win)
+  for _, w in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    if w ~= state.win and vim.api.nvim_win_get_config(w).relative == '' then
+      return false
+    end
+  end
+  return true
+end
+
 ---@param opts {cwd?:string}?
 function M.open(opts)
   opts = opts or {}
@@ -447,6 +458,7 @@ function M.open(opts)
       if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then
         return not state
       end
+      if is_sole_window() then return end
       state._tracked_width = vim.api.nvim_win_get_width(state.win)
     end,
   })
@@ -485,6 +497,29 @@ function M.open(opts)
     buffer = buf,
     once = true,
     callback = on_buf_wiped,
+  })
+
+  -- 内容窗口被关（:bd / :bwipe 等）导致 explorer 成为唯一窗口 → 补建伴随窗口恢复布局
+  vim.api.nvim_create_autocmd('WinClosed', {
+    callback = function(ev)
+      if not state or not state.win then return not state end
+      if not vim.api.nvim_win_is_valid(state.win) then return end
+      if tonumber(ev.match) == state.win then return end
+
+      vim.schedule(function()
+        if not state or not state.win then return end
+        if not vim.api.nvim_win_is_valid(state.win) then return end
+        if not is_sole_window() then return end
+
+        local saved_width = state._tracked_width
+        vim.api.nvim_set_current_win(state.win)
+        local pos = state.opts and state.opts.position or 'left'
+        vim.cmd(pos == 'right' and 'topleft vnew' or 'botright vnew')
+        vim.bo.buflisted = false
+        vim.bo.bufhidden = 'wipe'
+        vim.api.nvim_win_set_width(state.win, saved_width)
+      end)
+    end,
   })
 end
 

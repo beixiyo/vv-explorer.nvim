@@ -45,6 +45,8 @@
 
 ### Fixed
 
+- **宽度撑满：删除 buffer 后 explorer 宽度撑满整个屏幕**：内容窗口被关闭（`:bd` / `:bwipe` / `bufdel.smart` 等）后 explorer 成为 tabpage 唯一窗口，Neovim 忽略 `winfixwidth` 将其拉满，`WinResized` 还把错误宽度写入 `_tracked_width` 污染持久化。修复三处：① `is_sole_window()` 检测 explorer 是否为唯一非浮动窗口；② `WinResized` 回调跳过 sole-window 场景不更新 `_tracked_width`；③ 全局 `WinClosed` autocmd 在 explorer 成为唯一窗口时自动 `vnew` 补建 unlisted 伴随窗口并恢复原宽度
+
 - **preview：reveal / open 时主窗口被意外切换为预览**：复用旧 buffer（场景 A）时，`Render.render` → `nvim_buf_set_lines` 替换全部行可能 clamp cursor 到已变更的行号，触发 `CursorMoved` → `preview_file` 将主窗口切到非目标文件。修复：`M.open()` / `M.reveal()` 期间设 `state._skip_preview` 标志阻止 preview 回调；`preview_file` 路径比对加 `vim.fs.normalize` 归一化防止符号链接等微妙路径差异
 
 - **filter：`I`（show_ignored=true）仍搜不到个别 gitignored 文件**：两阶段策略的阶段二只处理以 `/` 结尾的目录行（嵌套 git repo 检测），非 `/` 结尾的个别 gitignored 文件（如 `.zsh/secret.zsh`）被直接丢弃。现在将这类行收集为 individually-ignored 文件直接加入结果，无需嵌套 repo 即可在 `/` filter 中搜到
