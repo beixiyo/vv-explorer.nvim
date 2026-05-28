@@ -360,6 +360,13 @@ function M.setup(opts)
       end
     end,
   })
+
+  local drop = require('vv-utils.drop')
+  drop.register(function(paths)
+    if not state or vim.api.nvim_get_current_buf() ~= state.buf then return false end
+    vim.schedule(function() Actions.drop_paste(state, paths) end)
+    return true
+  end)
 end
 
 -- state 的生命周期分两类字段：

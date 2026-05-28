@@ -186,6 +186,7 @@ icon_rules = {
 | `y` | `copy_mark` | 标记复制 |
 | `x` | `cut_mark` | 标记剪切 |
 | `p` | `paste` | 粘贴到光标目录 |
+| 拖拽 | `drop_paste` | 从文件管理器拖入，复制到光标目录 |
 | `<Tab>` | `toggle_select` | 切换多选 |
 | `T` | `trash_panel` | 打开回收站面板 |
 | `<C-e>` / `<C-y>` | 滚动预览 | 滚动主窗口预览 |

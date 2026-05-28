@@ -259,6 +259,36 @@ function L.attach(M, H)
       H.focus_path(state, last_dst)
     end
   end
+
+  function M.drop_paste(state, paths)
+    H.ensure_state_fields(state)
+    local node = H.node_under_cursor(state)
+    local dest_dir = dir_context(state, node)
+    local last_dst
+
+    local failed = {}
+    for _, src in ipairs(paths) do
+      local dst = Fs.unique_dest(dest_dir .. '/' .. vim.fs.basename(src))
+      local ok, err = pcall(Fs.copy, src, dst)
+      if not ok then
+        failed[#failed + 1] = tostring(err)
+      else
+        last_dst = dst
+      end
+    end
+
+    if #failed > 0 then
+      vim.notify('vv-explorer: drop errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
+    else
+      vim.notify(('Dropped %d item(s) → %s'):format(#paths, vim.fn.fnamemodify(dest_dir, ':.')))
+    end
+    after_fs_change(state)
+    if last_dst then
+      Tree.expand_to(state.root, last_dst)
+      Render.render(state)
+      H.focus_path(state, last_dst)
+    end
+  end
 end
 
 return L

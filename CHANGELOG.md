@@ -4,6 +4,7 @@
 
 ### Added
 
+- **拖拽粘贴**：从文件管理器拖拽文件到 explorer 窗口，自动复制到光标所在目录。基于 `vv-utils.drop` 的 handler 机制，explorer 打开时自动注册；支持多文件拖拽、同名自动重命名（`Fs.unique_dest`）。已验证：Kitty (Linux/macOS)、Ghostty (Linux/GTK4)
 - **`<Esc>` 清除剪贴板标记**：`<Esc>` 优先级调整为 `filter > 选区 + 剪贴板（一起清）> 关树`；`x`/`c` 标记的 cut/copy 状态现在可通过 `<Esc>` 一键取消，多选和剪贴板标记同时存在时也一并清除
 - **V 模式屏蔽**：`v`/`V` 在树 buffer 中映射为 `<Nop>`（nofile buffer 里 visual 无意义）；`<C-v>` 已映射为 `open_vsplit` 不受影响
 
