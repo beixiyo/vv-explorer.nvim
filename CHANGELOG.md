@@ -7,6 +7,7 @@
 - **拖拽粘贴**：从文件管理器拖拽文件到 explorer 窗口，自动复制到光标所在目录。基于 `vv-utils.drop` 的 handler 机制，explorer 打开时自动注册；支持多文件拖拽、同名自动重命名（`Fs.unique_dest`）。已验证：Kitty (Linux/macOS)、Ghostty (Linux/GTK4)
 - **`<Esc>` 清除剪贴板标记**：`<Esc>` 优先级调整为 `filter > 选区 + 剪贴板（一起清）> 关树`；`x`/`c` 标记的 cut/copy 状态现在可通过 `<Esc>` 一键取消，多选和剪贴板标记同时存在时也一并清除
 - **V 模式屏蔽**：`v`/`V` 在树 buffer 中映射为 `<Nop>`（nofile buffer 里 visual 无意义）；`<C-v>` 已映射为 `open_vsplit` 不受影响
+- **鼠标 visual 屏蔽**：屏蔽 `<LeftDrag>`（左键拖拽）和 `<2-LeftMouse>`（双击左键），防止鼠标操作触发 visual 选区
 
 - **二进制文件拦截**：`binary.intercept = true`（默认开启），`<CR>`/`l`/`o`/`<C-x>`/`<C-v>`/`<C-t>` 遇到二进制文件时不在 nvim 内 `:edit`，改用系统默认程序打开；预览也会跳过二进制文件。内置 30+ 常见扩展名（图片/视频/音频/压缩包/编译产物/字体/二进制文档/数据库），支持 `binary.extensions` 逐 key 增减覆盖
 - **状态感应图标**：文件夹现在支持三种状态切换：关闭 (󰉋)、展开 (󰝰)、空目录 (󰉖)，视觉风格对齐 `snacks.nvim`
