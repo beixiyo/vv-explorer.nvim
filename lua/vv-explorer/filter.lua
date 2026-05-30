@@ -42,9 +42,7 @@ function M.build_index(cwd, opts, on_done)
   local show_ignored = opts and opts.show_ignored
   local custom       = opts and opts.custom or {}
 
-  local git_root = vim.trim(vim.fn.system(
-    'git -C ' .. vim.fn.shellescape(cwd) .. ' rev-parse --show-toplevel 2>/dev/null'
-  ))
+  local git_root = require('vv-utils.git').root(cwd) or ''
   local in_git = git_root ~= ''
 
   -- show_ignored=false + inside a git repo → use git ls-files.
