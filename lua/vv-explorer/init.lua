@@ -475,10 +475,15 @@ function M.open(opts)
     if s._rescan_watches then s._rescan_watches() end
   end
 
+  -- win 相关的两个 autocmd（WinResized 跟踪宽度 + 全局 WinClosed 补窗）收进专用
+  -- augroup，每次 open 用 clear=true 复用同名 group：先清掉上一轮再注册，计数恒定不叠加
+  local win_aug = vim.api.nvim_create_augroup('vv-explorer.win', { clear = true })
+
   vim.api.nvim_create_autocmd('WinResized', {
+    group = win_aug,
     callback = function()
       if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then
-        return not state
+        return
       end
       if is_sole_window() then return end
       state._tracked_width = vim.api.nvim_win_get_width(state.win)
@@ -523,8 +528,9 @@ function M.open(opts)
 
   -- 内容窗口被关（:bd / :bwipe 等）导致 explorer 成为唯一窗口 → 补建伴随窗口恢复布局
   vim.api.nvim_create_autocmd('WinClosed', {
+    group = win_aug,
     callback = function(ev)
-      if not state or not state.win then return not state end
+      if not state or not state.win then return end
       if not vim.api.nvim_win_is_valid(state.win) then return end
       if tonumber(ev.match) == state.win then return end
 
