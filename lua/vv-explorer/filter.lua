@@ -54,7 +54,7 @@ function M.build_index(cwd, opts, on_done)
   if in_git and not show_ignored then
     local rel = (git_root ~= cwd) and cwd:sub(#git_root + 2) or ''
     local cmd = {
-      'git', '-C', git_root, 'ls-files',
+      'git', '-C', git_root, 'ls-files', '-z',
       '--cached', '--others', '--exclude-standard', '--full-name',
     }
     for _, pat in ipairs(custom) do
@@ -62,10 +62,10 @@ function M.build_index(cwd, opts, on_done)
     end
     if rel ~= '' then cmd[#cmd + 1] = '--'; cmd[#cmd + 1] = rel end
 
-    vim.system(cmd, { text = true }, vim.schedule_wrap(function(r)
+    vim.system(cmd, { text = false }, vim.schedule_wrap(function(r)
       local paths, is_dir_map = {}, {}
       if r.code == 0 and r.stdout then
-        for line in r.stdout:gmatch('[^\n]+') do
+        for line in (r.stdout .. '\0'):gmatch('([^%z]+)%z') do
           paths[#paths + 1] = git_root .. '/' .. line
         end
       end
@@ -82,7 +82,7 @@ function M.build_index(cwd, opts, on_done)
   if in_git then
     local rel = (git_root ~= cwd) and cwd:sub(#git_root + 2) or ''
     local phase1_cmd = {
-      'git', '-C', git_root, 'ls-files',
+      'git', '-C', git_root, 'ls-files', '-z',
       '--cached', '--others', '--exclude-standard', '--full-name',
     }
     for _, pat in ipairs(custom) do
@@ -90,27 +90,27 @@ function M.build_index(cwd, opts, on_done)
     end
     if rel ~= '' then phase1_cmd[#phase1_cmd + 1] = '--'; phase1_cmd[#phase1_cmd + 1] = rel end
 
-    vim.system(phase1_cmd, { text = true }, vim.schedule_wrap(function(r1)
+    vim.system(phase1_cmd, { text = false }, vim.schedule_wrap(function(r1)
       local phase1_paths = {}
       if r1.code == 0 and r1.stdout then
-        for line in r1.stdout:gmatch('[^\n]+') do
+        for line in (r1.stdout .. '\0'):gmatch('([^%z]+)%z') do
           phase1_paths[#phase1_paths + 1] = git_root .. '/' .. line
         end
       end
 
       local phase2_cmd = {
-        'git', '-C', git_root, 'ls-files',
+        'git', '-C', git_root, 'ls-files', '-z',
         '--others', '--ignored', '--exclude-standard', '--directory', '--full-name',
       }
       if rel ~= '' then phase2_cmd[#phase2_cmd + 1] = '--'; phase2_cmd[#phase2_cmd + 1] = rel end
 
-      vim.system(phase2_cmd, { text = true }, vim.schedule_wrap(function(r2)
+      vim.system(phase2_cmd, { text = false }, vim.schedule_wrap(function(r2)
         local nested_repos = {}
         -- Lines not ending in '/' are individually gitignored files (not inside a
         -- fully-ignored directory), e.g. ".zsh/secret.zsh". Collect them directly.
         local individually_ignored = {}
         if r2.code == 0 and r2.stdout then
-          for line in r2.stdout:gmatch('[^\n]+') do
+          for line in (r2.stdout .. '\0'):gmatch('([^%z]+)%z') do
             if line:sub(-1) == '/' then
               local dir = line:sub(1, -2)
               local abs_dir = git_root .. '/' .. dir
@@ -135,11 +135,11 @@ function M.build_index(cwd, opts, on_done)
         local pending = #nested_repos
         for _, repo_dir in ipairs(nested_repos) do
           vim.system(
-            { 'git', '-C', repo_dir, 'ls-files', '--cached', '--others', '--exclude-standard' },
-            { text = true },
+            { 'git', '-C', repo_dir, 'ls-files', '-z', '--cached', '--others', '--exclude-standard' },
+            { text = false },
             vim.schedule_wrap(function(r3)
               if r3.code == 0 and r3.stdout then
-                for line in r3.stdout:gmatch('[^\n]+') do
+                for line in (r3.stdout .. '\0'):gmatch('([^%z]+)%z') do
                   all_paths[#all_paths + 1] = repo_dir .. '/' .. line
                 end
               end
