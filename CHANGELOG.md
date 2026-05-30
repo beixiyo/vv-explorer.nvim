@@ -47,6 +47,8 @@
 
 ### Fixed
 
+- **filter prompt：关闭时不释放 debounce 的 uv timer，反复 `/` 过滤泄漏 timer 句柄**：过滤 prompt 用 `vv-utils.timer.debounce` 创建去抖回调，其内部常驻 uv timer 过去无 close 接口；prompt 的 `close()` 只关 spinner_timer、不管 debounce timer。buffer 虽 `bufhidden='wipe'`，但 uv timer 是独立 handle、GC 不会主动 close → 每按一次 `/` 开过滤就泄漏一个永不关闭的 timer。修复：配合 `vv-utils.timer.debounce` 新增的 `cancel` 返回值，`close()` 调用它释放 timer，并补 `BufWipeout` once 兜底覆盖绕过 `close()` 的关闭路径。headless 实测反复开关 6 轮 timer 句柄数恒为 0（修复前线性 +1/轮）
+
 - **filter：切根（`cd_to`/`cd_up`）后过滤复用旧 root 索引、拼出不存在的路径**：`start_filter` 复用旧 `state.filter` 表、`clear_filter` 只清 `active`/`query`，切根后 `f.index`/`index_rels` 仍是旧 root 的全树绝对路径；再按 `/` 时 `ensure_filter_index` 直接复用旧索引，`Filter.match` 用「新 root + 旧 rel」拼出磁盘上不存在的错误绝对路径（过滤到旧目录内容、打开/预览失败）。`cd_to` 当时完全不清 index、`cd_up` 只 `clear_filter` 也不清。另有「构建中途切根 → `index_building` 残留 true → 永不重建」的卡死隐患。修复：`ensure_filter_index` 记 `index_root`，复用前若 root 漂移则先失效再重建（root-stamp 单点，任何改根路径自动正确）；`cd_to`/`cd_up` 切根即时失效。抽共享 `helpers.invalidate_filter_index`（清 `index`/`index_rels`/`index_root`/`is_dir_map` + 复位 `index_building`），`toggle_hidden`/`refresh`/`toggle_gitignored`/`after_fs_change` 统一改用之
 
 - **符号链接路径归一化：删除后 buffer 清理 + reveal 定位**：`nvim_buf_get_name` 对经符号链接打开的文件返回「已解析真实路径」，而 `node.path` / `fnamemodify(':p')` / `vim.fs.normalize` 保留 symlink 形，两套口径在有 symlink 时对不上，引发两类问题：① 删 `link/foo` 后其 buffer（解析形 `real/foo`）漏清，残留指向已删文件、`:w` 会把已删文件重建（表现像「同名文件被删」，实为漏清、**非真删磁盘**）；② reveal / follow_file 查 `path_to_row` 失败 → 光标爬到错误祖先行。修复：新增共享 `vv-utils.fs.realpath`，`cleanup_deleted_bufs` / `M.delete`（删除前先解析，因删后 symlink 已不在）/ `preview.clear_if_deleted` 改在真实路径空间比对；reveal 经新增 `helpers.find_row` / `to_tree_path` / `expand_to_file` 统一口径。无 symlink 场景走快路径零额外开销；磁盘删除仍只作用于精确 `node.path`，不误删、不连带删同名文件

@@ -213,6 +213,8 @@ function M.open(state, opts)
 
   local spinner_ctx = { frame = 1 }
   local closed = false
+  -- debounce 的清理句柄：在创建 debounced fn 后赋值（见下方），close() 时调用以释放 uv timer
+  local cancel_debounce = nil
 
   local redraw = setup_decorations(buf, state, opts, spinner_ctx)
   redraw()
@@ -257,6 +259,8 @@ function M.open(state, opts)
     if closed then return end
     closed = true
     stop_spinner()
+    -- 释放 debounce 内部常驻的 uv timer，否则反复开关过滤会单调泄漏 timer 句柄
+    if cancel_debounce then pcall(cancel_debounce) end
     if state.filter then state.filter.on_redraw = nil end
     if vim.api.nvim_win_is_valid(win) then
       pcall(vim.api.nvim_win_close, win, true)
@@ -267,6 +271,15 @@ function M.open(state, opts)
   if state.filter and state.filter.index_building then start_spinner() end
 
   local aug = vim.api.nvim_create_augroup('vv-explorer-prompt.' .. buf, { clear = true })
+
+  -- 兜底：buffer 被任何路径 wipe（含绕过 close() 的外部关闭，如 :VVExplorerClose
+  -- 级联关窗）时，确保走 close()，释放 debounce 的 uv timer，杜绝句柄泄漏。
+  vim.api.nvim_create_autocmd('BufWipeout', {
+    group = aug,
+    buffer = buf,
+    once = true,
+    callback = function() close() end,
+  })
 
   -- 兜底：用户用任何方式（鼠标、误按方向键）跑到 line 0 就拉回 line 1
   vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
@@ -293,7 +306,8 @@ function M.open(state, opts)
     return 30
   end
 
-  local on_change_debounced = require('vv-utils.timer').debounce(function()
+  local on_change_debounced
+  on_change_debounced, cancel_debounce = require('vv-utils.timer').debounce(function()
     if closed or not vim.api.nvim_buf_is_valid(buf) then return end
     opts.on_change(get_query())
   end, get_debounce_ms)
