@@ -57,6 +57,7 @@
 - 兼容 image.nvim：预览图片定向补发事件，切走后旧图片正确清除
 - 兼容 render-markdown 等：filetype 检测移到设 buffer 之后
 - perf：HOME-as-repo 下 git ignored 扫描从 13s+ 降到 ~20ms
+- 树关窗隐藏期间不再因诊断变化做无谓的全量扫描（仅树窗口可见时才扫描，重开时补刷一次避免陈旧）
 
 ### Internal
 

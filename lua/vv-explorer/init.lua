@@ -440,6 +440,10 @@ function M.open(opts)
     state.prev_win = prev
     state._skip_preview = true
     Tree.refresh(state.root) -- 隐藏期间 fs_event 一直在跑，多一次 refresh 也 cheap
+    -- 隐藏期间诊断 refresh 被 win 守卫短路、state.diagnostics 已陈旧，重开补一次
+    if state.opts and state.opts.diagnostics and state.opts.diagnostics.enabled then
+      Diagnostics.refresh(state)
+    end
     Render.render(state)
     state._skip_preview = nil
     vim.api.nvim_create_autocmd('WinClosed', {
