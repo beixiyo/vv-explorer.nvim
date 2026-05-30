@@ -312,6 +312,21 @@ function M.setup(opts)
   end
   Trash.setup(config.trash)
 
+  -- git / diagnostics: false → 关闭, true → 默认, table → 合并
+  -- tbl_deep_extend('force') 会把 git=false / git=true 整体替换成布尔，
+  -- 后续 config.git.enabled 取下标会崩，故在此归一化为 table（与 trash 一致）
+  if config.git == false then
+    config.git = { enabled = false }
+  elseif config.git == true then
+    config.git = vim.tbl_deep_extend('force', {}, defaults.git)
+  end
+
+  if config.diagnostics == false then
+    config.diagnostics = { enabled = false }
+  elseif config.diagnostics == true then
+    config.diagnostics = vim.tbl_deep_extend('force', {}, defaults.diagnostics)
+  end
+
   Icons.compile(config.icon_rules)
   register_highlights()
 

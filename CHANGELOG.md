@@ -47,6 +47,8 @@
 
 ### Fixed
 
+- **config：`git` / `diagnostics` 传 `false`（或 `true`）时打开崩溃**：`setup` 用 `vim.tbl_deep_extend('force', defaults, opts)` 合并，当 `git = false`（非 table）时整个 `git` 字段被替换成布尔，`M.open` 里 `if config.git.enabled` 对布尔取下标抛 `attempt to index a boolean value`，文件树打不开；`git = true` 简写同样被替换成布尔而崩。原本只给 `trash` 做了归一化，漏了 `git`/`diagnostics`。修复：在 `setup` 里对二者做同款归一化（`false → { enabled = false }`、`true → 合并默认表`），保证 `config.git`/`config.diagnostics` 恒为 table
+
 - **filter：`<C-n>` / `<C-p>` 导航时光标乱跳**：`render_filter` 末尾无条件将光标拉回首个 match（`matched_abs[1]`）。glob/fuzzy 过滤出多个结果后，按 `<C-n>`/`<C-p>` 在 match 间切换时，`filter_navigate` 移动光标后调 `Preview.preview_file`，预览打开文件触发诊断 / fs 等增量重渲 → `render_filter` 又把光标抢回首个 match，导致永远停不到目标行（同根因下，过滤期间任意 LSP 诊断刷新也会抢走浏览光标）。修复：自动滚动改为一次性开关 `state.filter._want_scroll`，仅 `refilter`（query / 模式变化）置位、`render_filter` 渲染后立即消费；导航与增量重渲不再移动光标
 
 - **宽度撑满：删除 buffer 后 explorer 宽度撑满整个屏幕**：内容窗口被关闭（`:bd` / `:bwipe` / `bufdel.smart` 等）后 explorer 成为 tabpage 唯一窗口，Neovim 忽略 `winfixwidth` 将其拉满，`WinResized` 还把错误宽度写入 `_tracked_width` 污染持久化。修复三处：① `is_sole_window()` 检测 explorer 是否为唯一非浮动窗口；② `WinResized` 回调跳过 sole-window 场景不更新 `_tracked_width`；③ 全局 `WinClosed` autocmd 在 explorer 成为唯一窗口时自动 `vnew` 补建 unlisted 伴随窗口并恢复原宽度
