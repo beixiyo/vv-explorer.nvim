@@ -39,6 +39,7 @@
 
 ### Fixed
 
+- 粘贴：copy 模式也拦「粘到自身/自身子树」（原先只 cut 模式拦），避免触发 fs.copy 自包含递归
 - 过滤框开着时从别处关掉树窗（state.win 置 nil）后，在框内按回车/Esc 不再崩（nvim_win_is_valid(nil)）
 - 关树时 git 查询在后台跑，返回后不再往已销毁状态写残缺数据
 - 反复按 `/` 过滤不再泄漏 uv timer

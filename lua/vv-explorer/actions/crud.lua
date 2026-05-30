@@ -242,7 +242,7 @@ function L.attach(M, H)
 
     local failed = {}
     for _, src in ipairs(state.clipboard.paths) do
-      if mode == 'cut' and (dest_dir == src or dest_dir:sub(1, #src + 1) == src .. '/') then
+      if dest_dir == src or dest_dir:sub(1, #src + 1) == src .. '/' then
         failed[#failed + 1] = 'skip: ' .. src .. ' → inside itself'
         goto continue
       end
