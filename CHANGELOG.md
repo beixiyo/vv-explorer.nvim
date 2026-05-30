@@ -47,6 +47,8 @@
 
 ### Fixed
 
+- **reveal：`Tree.expand_to` / `Tree.find` 误把内嵌 root 路径的无关文件当后代**：祖先判断用 `target_path:find(root.path .. '/', 1, true)`，`plain=true` 只关魔法字符、仍是「任意位置子串匹配」而非前缀判断。打开一个绝对路径里碰巧内嵌了 explorer 根路径的无关文件（如 `/tmp<root>/x`）时，guard 误判为后代，`sub(#root+2)` 切出错位相对路径；多数情况下静默失败看不出，但 root 内恰好存在同名链时会把光标/展开定位到错误节点。修复：`tree.lua` 两处改为真正的前缀判断 `target_path:sub(1, #root.path + 1) == root.path .. '/'`
+
 - **config：`git` / `diagnostics` 传 `false`（或 `true`）时打开崩溃**：`setup` 用 `vim.tbl_deep_extend('force', defaults, opts)` 合并，当 `git = false`（非 table）时整个 `git` 字段被替换成布尔，`M.open` 里 `if config.git.enabled` 对布尔取下标抛 `attempt to index a boolean value`，文件树打不开；`git = true` 简写同样被替换成布尔而崩。原本只给 `trash` 做了归一化，漏了 `git`/`diagnostics`。修复：在 `setup` 里对二者做同款归一化（`false → { enabled = false }`、`true → 合并默认表`），保证 `config.git`/`config.diagnostics` 恒为 table
 
 - **filter：`<C-n>` / `<C-p>` 导航时光标乱跳**：`render_filter` 末尾无条件将光标拉回首个 match（`matched_abs[1]`）。glob/fuzzy 过滤出多个结果后，按 `<C-n>`/`<C-p>` 在 match 间切换时，`filter_navigate` 移动光标后调 `Preview.preview_file`，预览打开文件触发诊断 / fs 等增量重渲 → `render_filter` 又把光标抢回首个 match，导致永远停不到目标行（同根因下，过滤期间任意 LSP 诊断刷新也会抢走浏览光标）。修复：自动滚动改为一次性开关 `state.filter._want_scroll`，仅 `refilter`（query / 模式变化）置位、`render_filter` 渲染后立即消费；导航与增量重渲不再移动光标

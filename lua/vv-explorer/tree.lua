@@ -188,7 +188,9 @@ end
 ---@return boolean ok
 function M.expand_to(root, target_path)
   target_path = norm(target_path)
-  if target_path ~= root.path and not target_path:find(root.path .. '/', 1, true) then
+  -- 真正的前缀判断：string.find(plain) 是「任意位置子串匹配」，会把路径里碰巧
+  -- 内嵌了 root.path 的无关文件（如 /tmp<root.path>/x）误判为后代，导致 rel 错位
+  if target_path ~= root.path and target_path:sub(1, #root.path + 1) ~= root.path .. '/' then
     return false
   end
   if target_path == root.path then return true end
@@ -211,7 +213,7 @@ end
 function M.find(root, path)
   path = norm(path)
   if path == root.path then return root end
-  if not path:find(root.path .. '/', 1, true) then return nil end
+  if path:sub(1, #root.path + 1) ~= root.path .. '/' then return nil end
   local rel = path:sub(#root.path + 2)
   local node = root
   for _, part in ipairs(vim.split(rel, '/', { plain = true })) do
