@@ -139,8 +139,15 @@ function L.attach(M, H)
   ---@return boolean ok
   local function ensure_filter_index(state)
     local f = state.filter
+    -- 根失效（root-stamp）：索引/rels 是为某个具体 root 建的全树绝对路径，切根后
+    -- （cd_to/cd_up 或任何未来改 state.root 的路径）旧索引不再适用。这里统一在
+    -- 真正复用旧索引「之前」校验，发现 root 漂移就先失效再重建，使所有改根入口自动正确。
+    if (f.index or f.index_building) and f.index_root ~= state.root.path then
+      H.invalidate_filter_index(state)
+    end
     if f.index or f.index_building then return true end
     f.index_building = true
+    f.index_root = state.root.path
     local ok = Filter.build_index(state.root.path, {
       hidden = state.opts.hidden,
       show_ignored = state.opts.git and state.opts.git.show_ignored,
@@ -153,6 +160,7 @@ function L.attach(M, H)
     end)
     if not ok then
       f.index_building = false
+      f.index_root = nil
       M.clear_filter(state)
       return false
     end

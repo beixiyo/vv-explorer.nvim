@@ -73,20 +73,14 @@ function L.attach(M, H)
 
   function M.toggle_hidden(state)
     state.opts.hidden = not state.opts.hidden
-    if state.filter then
-      state.filter.index = nil
-      state.filter.index_rels = nil
-    end
+    H.invalidate_filter_index(state)
     Render.render(state)
     vim.notify('vv-explorer: hidden = ' .. tostring(state.opts.hidden))
   end
 
   function M.refresh(state)
     Tree.refresh(state.root)
-    if state.filter then
-      state.filter.index = nil
-      state.filter.index_rels = nil
-    end
+    H.invalidate_filter_index(state)
     if state.git and state.git.refresh then state.git.refresh() end
     Render.render(state)
   end
@@ -132,10 +126,7 @@ function L.attach(M, H)
   function M.toggle_gitignored(state)
     state.opts.git = state.opts.git or {}
     state.opts.git.show_ignored = not state.opts.git.show_ignored
-    if state.filter then
-      state.filter.index = nil
-      state.filter.index_rels = nil
-    end
+    H.invalidate_filter_index(state)
     Render.render(state)
     vim.notify('vv-explorer: show_ignored = ' .. tostring(state.opts.git.show_ignored))
   end
@@ -146,6 +137,9 @@ function L.attach(M, H)
     local node = H.node_under_cursor(state)
     if not node or not node.is_dir then return end
     state.root = Tree.new_root(node.path)
+    -- 切根即时失效旧索引（与 after_fs_change 约定一致）；ensure_filter_index 的
+    -- root-stamp 校验是兜底，两者并存确保任何改根路径都不会复用旧 root 的索引。
+    H.invalidate_filter_index(state)
     Render.render(state)
   end
 
@@ -154,6 +148,7 @@ function L.attach(M, H)
     if parent == state.root.path then return end
     state.root = Tree.new_root(parent)
     M.clear_filter(state)
+    H.invalidate_filter_index(state)
     Render.render(state)
   end
 

@@ -34,10 +34,7 @@ function L.attach(M, H)
   local function after_fs_change(state)
     Tree.refresh(state.root)
     state.selection = {}
-    if state.filter then
-      state.filter.index = nil
-      state.filter.index_rels = nil
-    end
+    H.invalidate_filter_index(state)
     if state.git and state.git.refresh then state.git.refresh() end
     Render.render(state)
   end

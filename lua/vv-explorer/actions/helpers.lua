@@ -118,6 +118,26 @@ end
 
 H.EMPTY_MATCHED = { abs = {}, rels = {}, positions = {}, total_count = 0 }
 
+-- 统一失效过滤索引：清空全树索引及其派生缓存，并复位「正在构建」标志。
+--
+-- 凡是会改变「可见文件集合」的操作（切根 cd_to/cd_up、增删改、切 hidden/gitignored、
+-- refresh）都必须调它，否则旧索引（旧 root 的绝对路径 / 旧配置的路径集）会被
+-- ensure_filter_index / refilter 复用，导致用「新 root + 旧 rels」拼出磁盘上不存在
+-- 的错误绝对路径。集中一处清，避免每个入口各写一遍、漏字段。
+--
+-- index_building 一并复位为 false：否则某次构建中途切根，残留 true 会让
+-- ensure_filter_index 误判「仍在 building」而永不重建（卡 building）。
+---@param state table
+function H.invalidate_filter_index(state)
+  local f = state.filter
+  if not f then return end
+  f.index = nil
+  f.index_rels = nil
+  f.index_root = nil
+  f.is_dir_map = nil
+  f.index_building = false
+end
+
 ---@param path string
 ---@param opts VVExplorerConfig
 ---@return boolean
