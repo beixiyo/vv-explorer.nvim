@@ -427,8 +427,13 @@ function M.render_filter(state)
 
   flush(state.buf, lines, extmarks)
 
-  -- 自动滚动到最佳匹配项（fuzzy 模式下 matched.abs[1] 是得分最高的项）
-  if #matched_abs > 0 and state.win and vim.api.nvim_win_is_valid(state.win) then
+  -- 自动滚动到最佳匹配项（fuzzy 模式下 matched.abs[1] 是得分最高的项）。
+  -- 仅在「过滤结果刚变化」时执行（由 refilter 置 _want_scroll，一次性消费）：
+  -- 否则 <C-n>/<C-p> 导航、或预览触发的诊断/git/fs 增量重渲，都会把光标从用户
+  -- 当前所在的 match 强行抢回首个 match，造成光标乱跳。
+  local want_scroll = f._want_scroll
+  f._want_scroll = nil
+  if want_scroll and #matched_abs > 0 and state.win and vim.api.nvim_win_is_valid(state.win) then
     local best = matched_abs[1]
     local target_lnum = path_to_row[best]
     if target_lnum then

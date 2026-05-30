@@ -25,6 +25,8 @@ function L.attach(M, H)
       f.matched = Filter.match(f.index, f.index_rels, state.root.path, f.query, f.mode, state.opts.filter and state.opts.filter.max_results)
     end
     f.searching = false
+    -- 仅在「过滤结果刚变化」时让 render_filter 自动滚到最佳匹配；导航/增量重渲不触发
+    f._want_scroll = true
     Render.render(state)
     if f.on_redraw then pcall(f.on_redraw) end
   end
