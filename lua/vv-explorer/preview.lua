@@ -164,12 +164,17 @@ function M.promote(state)
   M._preview[state] = nil
 end
 
+-- path_set 的 key 由 crud.cleanup_deleted_bufs 用 Fs.realpath 解析为真实路径并去尾斜杠；
+-- 这里把预览 buffer name 同样 normalize + 去尾斜杠后比对，口径一致才不会漏命中。
 ---@param state table
 ---@param path_set table<string, boolean>
 function M.clear_if_deleted(state, path_set)
   local buf = M._preview[state]
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  if path_set[vim.api.nvim_buf_get_name(buf)] then
+  local raw = vim.api.nvim_buf_get_name(buf)
+  if raw == '' then return end
+  local name = vim.fs.normalize(raw):gsub('/+$', '')
+  if path_set[name] then
     M._preview[state] = nil
   end
 end

@@ -47,6 +47,8 @@
 
 ### Fixed
 
+- **符号链接路径归一化：删除后 buffer 清理 + reveal 定位**：`nvim_buf_get_name` 对经符号链接打开的文件返回「已解析真实路径」，而 `node.path` / `fnamemodify(':p')` / `vim.fs.normalize` 保留 symlink 形，两套口径在有 symlink 时对不上，引发两类问题：① 删 `link/foo` 后其 buffer（解析形 `real/foo`）漏清，残留指向已删文件、`:w` 会把已删文件重建（表现像「同名文件被删」，实为漏清、**非真删磁盘**）；② reveal / follow_file 查 `path_to_row` 失败 → 光标爬到错误祖先行。修复：新增共享 `vv-utils.fs.realpath`，`cleanup_deleted_bufs` / `M.delete`（删除前先解析，因删后 symlink 已不在）/ `preview.clear_if_deleted` 改在真实路径空间比对；reveal 经新增 `helpers.find_row` / `to_tree_path` / `expand_to_file` 统一口径。无 symlink 场景走快路径零额外开销；磁盘删除仍只作用于精确 `node.path`，不误删、不连带删同名文件
+
 - **explorer：`WinResized` / 全局 `WinClosed` autocmd 随每次 open 累积泄漏**：「完整打开」分支每次都裸注册（无 augroup、非 once）这两个 win 相关 autocmd，靠回调 `return not state` 自删；但 `open → :bwipe → 再 open` 后 `state` 重新非 nil，旧回调永远删不掉，多次循环叠加 N 个回调对同一 state 重复执行宽度写入 / 补窗逻辑。修复：收进专用 augroup `vv-explorer.win`（每次 `open` 用 `clear = true` 复用，先清旧再注册），计数恒定不叠加；业务逻辑（`_tracked_width` 宽度跟踪 + sole-window `vnew` 补窗）零改动。另两处 `WinClosed`（场景 A 复用窗 / 手动关窗 `close_window_only`）本就是 `pattern + once`，自清不泄漏，未动
 
 - **reveal：`Tree.expand_to` / `Tree.find` 误把内嵌 root 路径的无关文件当后代**：祖先判断用 `target_path:find(root.path .. '/', 1, true)`，`plain=true` 只关魔法字符、仍是「任意位置子串匹配」而非前缀判断。打开一个绝对路径里碰巧内嵌了 explorer 根路径的无关文件（如 `/tmp<root>/x`）时，guard 误判为后代，`sub(#root+2)` 切出错位相对路径；多数情况下静默失败看不出，但 root 内恰好存在同名链时会把光标/展开定位到错误节点。修复：`tree.lua` 两处改为真正的前缀判断 `target_path:sub(1, #root.path + 1) == root.path .. '/'`

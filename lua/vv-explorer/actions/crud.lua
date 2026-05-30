@@ -42,19 +42,26 @@ function L.attach(M, H)
     Render.render(state)
   end
 
+  -- 清理已删文件/目录对应的 buffer。
+  --
+  -- 关键：两侧路径必须走「同一规范化口径」。`nvim_buf_get_name` 对经过符号链接打开的
+  -- 文件返回的是「已解析的真实路径」，而 `node.path`（删除目标）是符号链接形式，二者
+  -- 字符串不相等。统一用 `Fs.realpath` 把两侧都解析到真实路径再比，避免 symlink 漏命中。
+  --
+  -- `keys` 由调用方在「删除发生之前」用 Fs.realpath 解析好（删后 symlink/文件已不在，
+  -- 无法再解析），每个 key 已去除尾斜杠，指向真实路径。
   ---@param state table
-  ---@param paths string[]
-  local function cleanup_deleted_bufs(state, paths)
+  ---@param keys string[]  已解析为真实路径、去尾斜杠的删除目标
+  local function cleanup_deleted_bufs(state, keys)
     local set = {}
-    for _, p in ipairs(paths) do
-      local abs = vim.fn.fnamemodify(p, ':p'):gsub('/+$', '')
-      set[abs] = true
-    end
+    for _, k in ipairs(keys) do set[k] = true end
     Preview.clear_if_deleted(state, set)
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       if vim.api.nvim_buf_is_valid(buf) then
-        local name = vim.api.nvim_buf_get_name(buf)
-        if name == '' then goto skip end
+        local raw = vim.api.nvim_buf_get_name(buf)
+        if raw == '' then goto skip end
+        -- buffer name 已是解析形，但仍 normalize 兜底（去重复斜杠等）
+        local name = vim.fs.normalize(raw):gsub('/+$', '')
         local hit = set[name]
         if not hit then
           for abs in pairs(set) do
@@ -123,6 +130,13 @@ function L.attach(M, H)
     local choice = vim.fn.confirm(msg, '&Yes\n&No', 2)
     if choice ~= 1 then return end
 
+    -- 删除发生前先把每个目标解析为真实路径（去尾斜杠）：删后 symlink/文件已不在，
+    -- 无法再解析。buffer name 是解析形，两侧统一到真实路径才能正确匹配清理。
+    local resolved = {}
+    for _, p in ipairs(paths) do
+      resolved[p] = Fs.realpath(p):gsub('/+$', '')
+    end
+
     local deleted, failed
     if use_trash then
       local result = Trash.trash(paths)
@@ -146,7 +160,11 @@ function L.attach(M, H)
       local past = use_trash and 'Trashed' or 'Deleted'
       vim.notify(('%s %d item(s)'):format(past, #deleted))
     end
-    if #deleted > 0 then cleanup_deleted_bufs(state, deleted) end
+    if #deleted > 0 then
+      local keys = {}
+      for _, p in ipairs(deleted) do keys[#keys + 1] = resolved[p] end
+      cleanup_deleted_bufs(state, keys)
+    end
     after_fs_change(state)
   end
 

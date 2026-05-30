@@ -269,29 +269,21 @@ end
 local function reveal_no_focus(file)
   if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
 
-  local p = vim.fs.normalize(file)
-  if state.path_to_row then
-    local existing = state.path_to_row[p]
-    if existing then
-      local cur = vim.api.nvim_win_get_cursor(state.win)[1]
-      if cur ~= existing then
-        vim.api.nvim_win_set_cursor(state.win, { existing, 0 })
-      end
-      return
+  -- 已渲染的树里直接找行（含 symlink 解析口径对齐，见 H.find_row）
+  local existing = Actions.find_row(state, file)
+  if existing then
+    local cur = vim.api.nvim_win_get_cursor(state.win)[1]
+    if cur ~= existing then
+      vim.api.nvim_win_set_cursor(state.win, { existing, 0 })
     end
+    return
   end
 
-  if not Tree.expand_to(state.root, file) then return end
+  if not Actions.expand_to_file(state, file) then return end
   Render.render(state)
 
-  local lnum
-  while p ~= '' do
-    lnum = state.path_to_row[p]
-    if lnum then break end
-    local parent = vim.fs.dirname(p)
-    if parent == p then break end
-    p = parent
-  end
+  -- 展开后再找一次（find_row 内部已做「最深可达祖先」回溯，覆盖 group_empty_dirs 合并）
+  local lnum = Actions.find_row(state, file)
   if lnum then
     vim.api.nvim_win_set_cursor(state.win, { lnum, 0 })
   end
@@ -579,18 +571,10 @@ function M.reveal(opts)
   if not state then return end
 
   state._skip_preview = true
-  if Tree.expand_to(state.root, file) then
+  if Actions.expand_to_file(state, file) then
     Render.render(state)
-    -- 找最深的可达行（reveal target 可能被分组合并到上层）
-    local p = vim.fs.normalize(file)
-    local lnum
-    while p ~= '' do
-      lnum = state.path_to_row[p]
-      if lnum then break end
-      local parent = vim.fs.dirname(p)
-      if parent == p then break end
-      p = parent
-    end
+    -- 找最深的可达行（reveal target 可能被分组合并到上层；含 symlink 解析对齐）
+    local lnum = Actions.find_row(state, file)
     if lnum then
       vim.api.nvim_win_set_cursor(state.win, { lnum, 0 })
     end
