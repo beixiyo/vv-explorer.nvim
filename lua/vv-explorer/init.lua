@@ -378,7 +378,7 @@ end
 
 -- state 的生命周期分两类字段：
 --   ephemeral（每次 open 重建）：win, prev_win, rows, path_to_row
---   persistent（跨 close/open 保留）：buf, root, opts, filter, _watches, _timer, _rescan_watches
+--   persistent（跨 close/open 保留）：buf, root, opts, filter, _watches, _fs_cancel, _rescan_watches
 --
 -- close 时只关 win + 清 ephemeral；buf/树数据/fs_event/filter 全部留给下次 open 复用。
 -- 这靠 Window.create_buf 设的 bufhidden='hide' 保证窗口关了 buf 不被销毁。

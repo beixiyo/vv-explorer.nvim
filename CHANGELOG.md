@@ -34,6 +34,7 @@
 
 - **actions.lua 拆为 actions/ 子模块**（826 行 → 5 文件），对外 API 不变
 - **prompt.lua 浮窗选项改 `scope='local'`**：不再污染全局默认值
+- git.lua / watch.lua 的手搓防抖统一复用 `vv-utils.timer.debounce`，detach 改用其 cancel 句柄释放 timer
 
 ### Fixed
 

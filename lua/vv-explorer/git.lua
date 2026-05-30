@@ -6,8 +6,8 @@
 --   改为 `git ls-files --others --ignored --directory`：
 --   `--directory` 让 git 不递归进 ignored 目录，20ms 拿到全量 ignored。
 
-local uv = vim.uv or vim.loop
 local UGit = require('vv-utils.git')
+local Timer = require('vv-utils.timer')
 
 local M = {}
 
@@ -19,9 +19,6 @@ function M.attach(state)
   state.git.status_map = state.git.status_map or {}
   state.git.is_ignored = state.git.is_ignored or function() return false end
   state.git.is_tracked = state.git.is_tracked or function() return false end
-  state.git._timer = state.git._timer or assert(uv.new_timer())
-  state.git._tracked_timer = state.git._tracked_timer or assert(uv.new_timer())
-  state.git._ignored_timer = state.git._ignored_timer or assert(uv.new_timer())
 
   local function rerender()
     if state.win and vim.api.nvim_win_is_valid(state.win) then
@@ -65,20 +62,18 @@ function M.attach(state)
     end, { scope = true })
   end
 
+  -- 三条线各自 debounce（复用 vv-utils.timer.debounce：内部 stop+restart + schedule_wrap）
+  -- debounce 会转发参数，故 refresh_status(after) → run_status(after)，语义不变
+  local refresh_status,  cancel_status  = Timer.debounce(run_status,  DEBOUNCE_MS)
+  local refresh_tracked, cancel_tracked = Timer.debounce(run_tracked, DEBOUNCE_MS)
+  local refresh_ignored, cancel_ignored = Timer.debounce(run_ignored, DEBOUNCE_MS)
+  state.git._cancels = { cancel_status, cancel_tracked, cancel_ignored }
+
   state.git.refresh = function(after)
     if not state.git then return end
-    if state.git._timer then
-      state.git._timer:stop()
-      state.git._timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(function() run_status(after) end))
-    end
-    if state.git._tracked_timer then
-      state.git._tracked_timer:stop()
-      state.git._tracked_timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(run_tracked))
-    end
-    if state.git._ignored_timer then
-      state.git._ignored_timer:stop()
-      state.git._ignored_timer:start(DEBOUNCE_MS, 0, vim.schedule_wrap(run_ignored))
-    end
+    refresh_status(after)
+    refresh_tracked()
+    refresh_ignored()
   end
 
   -- 首次：三条线并行跑，各自完成各自重画
@@ -90,17 +85,8 @@ end
 ---@param state table
 function M.detach(state)
   if not state or not state.git then return end
-  if state.git._timer then
-    pcall(state.git._timer.stop, state.git._timer)
-    pcall(state.git._timer.close, state.git._timer)
-  end
-  if state.git._tracked_timer then
-    pcall(state.git._tracked_timer.stop, state.git._tracked_timer)
-    pcall(state.git._tracked_timer.close, state.git._tracked_timer)
-  end
-  if state.git._ignored_timer then
-    pcall(state.git._ignored_timer.stop, state.git._ignored_timer)
-    pcall(state.git._ignored_timer.close, state.git._ignored_timer)
+  for _, cancel in ipairs(state.git._cancels or {}) do
+    pcall(cancel)
   end
   state.git = nil
 end
