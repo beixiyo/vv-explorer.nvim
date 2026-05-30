@@ -112,7 +112,7 @@ function L.attach(M, H)
       on_submit = function(q)
         f.query = q
         refilter(state)
-        if vim.api.nvim_win_is_valid(state.win) then
+        if state.win and vim.api.nvim_win_is_valid(state.win) then
           vim.api.nvim_set_current_win(state.win)
           local first = f.matched.abs[1]
           if first then H.focus_path(state, first) end
@@ -120,7 +120,7 @@ function L.attach(M, H)
       end,
       on_cancel = function()
         M.clear_filter(state)
-        if vim.api.nvim_win_is_valid(state.win) then
+        if state.win and vim.api.nvim_win_is_valid(state.win) then
           vim.api.nvim_set_current_win(state.win)
         end
       end,
