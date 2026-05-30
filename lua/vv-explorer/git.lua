@@ -32,7 +32,7 @@ function M.attach(state)
   -- status（不含 --ignored）：只拿 modified/added/untracked 等状态标记
   local function run_status(after)
     UGit.index(state.root.path, function(idx)
-      state.git = state.git or {}
+      if not state.git then return end -- detach 后丢弃在途结果，不复活孤儿 state.git
       if idx then
         state.git.status_map = idx.status_map
       else
@@ -46,7 +46,7 @@ function M.attach(state)
   -- tracked：只读 .git/index，毫秒级
   local function run_tracked()
     UGit.tracked(state.root.path, function(t)
-      state.git = state.git or {}
+      if not state.git then return end -- 同上：detach 后短路
       if t then
         state.git.is_tracked = t.is_tracked
       else
@@ -59,7 +59,7 @@ function M.attach(state)
   -- ignored：ls-files --others --ignored --directory，不递归进 ignored 目录
   local function run_ignored()
     UGit.ignored_entries(state.root.path, function(ifiles, idirs)
-      state.git = state.git or {}
+      if not state.git then return end -- 同上：detach 后短路
       state.git.is_ignored = UGit.make_is_ignored(ifiles, idirs)
       rerender()
     end, { scope = true })
