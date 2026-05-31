@@ -175,7 +175,7 @@ icon_rules = {
 | `.` / `<M-.>` | `toggle_hidden` | 切换 dotfile 显隐 |
 | `I` / `<M-i>` | `toggle_gitignored` | 切换 gitignored 显隐 |
 | `R` | `refresh` | 强制刷新 |
-| `Y` | `yank_abs_path` | 复制路径（多选时复制所有） |
+| `Y` | `yank_abs_path` | 复制绝对路径（多选时复制所有） |
 | `<C-x>` | `open_split` | 水平分屏打开 |
 | `<C-v>` | `open_vsplit` | 垂直分屏打开 |
 | `<C-t>` | `open_tab` | 新 tab 打开 |

@@ -47,8 +47,10 @@ test('README 不再列 gy 键', function()
   assert(not readme:match('\n|%s*`gy`'), 'README 仍列出 gy 键')
 end)
 
-test('README 列出 <RightMouse>', function()
-  assert(readme:find('RightMouse'), 'README 未记录 <RightMouse>')
+test('README 列出右键复制路径', function()
+  -- README 键位表用中文「右键」标注鼠标动作（与「拖拽」同风格），非字面 <RightMouse>
+  assert(readme:find('右键'), 'README 未记录右键动作')
+  assert(readme:find('yank_abs_path'), 'README 未记录右键对应的 yank_abs_path 动作')
 end)
 
 test('README 列出 <C-e> / <C-y>', function()
