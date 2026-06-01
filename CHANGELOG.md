@@ -48,6 +48,7 @@
 - 切根（`cd_to`/`cd_up`）后过滤即时重建索引，不再拼出旧 root 的无效路径（并修「构建中途切根永不重建」卡死）
 - 经符号链接打开的文件：删除后 buffer 正确清理（不再像「同名文件被删」）、reveal 光标定位正确
 - follow_file：折叠目录里的文件现在能正确展开定位（原先 `find_row` 的 ancestor 回溯把它误判为已可见，只移光标到折叠目录行而跳过展开）
+- reveal/follow_file：定位「hidden + git tracked」目录下的文件（如 `.zsh/.../ff.sh`）时，首次打开光标不再卡在第一行——原因是 git `is_tracked` 异步未就绪时该子树被过滤、`find_row` 回退到 root 行；现用 `_pending_reveal` 等子树渲染出来后再归位
 - `WinResized`/`WinClosed` autocmd 收进专用 augroup，不再随每次 open 累积
 - reveal 祖先判断改前缀匹配，不再误把内嵌 root 路径的无关文件当后代
 - `git`/`diagnostics` 传 `false`/`true` 不再崩（`setup` 做 table 归一化）

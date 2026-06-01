@@ -257,6 +257,30 @@ function M.render(state)
   end
 end
 
+-- 把光标移到 state._pending_reveal 指向的行并清除 pending。
+--
+-- 背景：reveal 目标若位于「hidden + git tracked」目录下，该目录要等 git 的
+-- is_tracked 异步就绪后才会进入 flatten；在此之前整棵子树被过滤，find_row 沿祖先
+-- 回退到 root（行 1）。故 reveal 当下定位不到，记下 pending，待 git 完成触发的
+-- render_stable 把目标行渲染出来后由本函数归位。
+--
+-- lnum == 1 视为「尚未就绪」（行 1 恒为 root，合法 reveal 目标不可能落在此），
+-- 保留 pending 等下一次渲染。
+---@param state table
+---@return boolean positioned  成功归位（已清 pending）返回 true
+function M.try_reveal_cursor(state)
+  local file = state._pending_reveal
+  if not file then return false end
+  if not state.win or not vim.api.nvim_win_is_valid(state.win) then return false end
+
+  local lnum = require('vv-explorer.actions').find_row(state, file)
+  if not lnum or lnum == 1 then return false end
+
+  pcall(vim.api.nvim_win_set_cursor, state.win, { lnum, 0 })
+  state._pending_reveal = nil
+  return true
+end
+
 function M.render_stable(state)
   if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then
     return M.render(state)
@@ -278,7 +302,9 @@ function M.render_stable(state)
   state._skip_preview = true
   M.render(state)
 
-  if prev_path and state.path_to_row then
+  -- pending reveal 优先于 prev_path 复原：reveal 目标行此前缺失（git 异步未就绪），
+  -- 一旦出现就归位；两者意图不同时以用户的 reveal 意图为准
+  if not M.try_reveal_cursor(state) and prev_path and state.path_to_row then
     local new_lnum = state.path_to_row[prev_path]
     if new_lnum then
       pcall(vim.api.nvim_win_set_cursor, state.win, { new_lnum, 0 })

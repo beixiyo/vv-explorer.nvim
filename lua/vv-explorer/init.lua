@@ -273,11 +273,14 @@ end
 local function reveal_no_focus(file)
   if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
 
+  state._pending_reveal = file
+
   -- 精确路径匹配：find_row 的 ancestor 回溯会把「在折叠目录中的文件」误判为已可见，
   -- 导致光标只移到折叠目录行而跳过展开逻辑。初始判断只检查 file 本身是否已渲染
   local norm = vim.fs.normalize(file)
   local existing = state.path_to_row and state.path_to_row[norm]
   if existing then
+    state._pending_reveal = nil
     local cur = vim.api.nvim_win_get_cursor(state.win)[1]
     if cur ~= existing then
       vim.api.nvim_win_set_cursor(state.win, { existing, 0 })
@@ -285,14 +288,15 @@ local function reveal_no_focus(file)
     return
   end
 
-  if not Actions.expand_to_file(state, file) then return end
+  if not Actions.expand_to_file(state, file) then
+    state._pending_reveal = nil
+    return
+  end
   Render.render(state)
 
-  -- 展开后再找一次（find_row 内部含 ancestor 回溯 + symlink 解析，覆盖 group_empty_dirs 合并）
-  local lnum = Actions.find_row(state, file)
-  if lnum then
-    vim.api.nvim_win_set_cursor(state.win, { lnum, 0 })
-  end
+  -- 目标行已渲染则归位（find_row 含 ancestor 回溯 + symlink 解析，覆盖 group_empty_dirs）；
+  -- 若因 git is_tracked 异步未就绪而暂时定位不到，保留 pending 待后续 render_stable 归位
+  Render.try_reveal_cursor(state)
 end
 
 ---@param opts VVExplorerConfig?
@@ -425,6 +429,7 @@ local function close_window_only()
   state.prev_win = nil
   state.rows = nil
   state.path_to_row = nil
+  state._pending_reveal = nil
 end
 
 local function is_sole_window()
@@ -588,13 +593,14 @@ function M.reveal(opts)
   if not state then return end
 
   state._skip_preview = true
+  state._pending_reveal = file
   if Actions.expand_to_file(state, file) then
     Render.render(state)
-    -- 找最深的可达行（reveal target 可能被分组合并到上层；含 symlink 解析对齐）
-    local lnum = Actions.find_row(state, file)
-    if lnum then
-      vim.api.nvim_win_set_cursor(state.win, { lnum, 0 })
-    end
+    -- 目标行已渲染则归位；若因 git is_tracked 异步未就绪、hidden+tracked 祖先暂被
+    -- 过滤而定位不到，则保留 pending，待 git 完成的 render_stable 出现后归位
+    Render.try_reveal_cursor(state)
+  else
+    state._pending_reveal = nil
   end
   state._skip_preview = nil
   M.focus()
