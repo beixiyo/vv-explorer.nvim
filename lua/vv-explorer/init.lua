@@ -60,8 +60,10 @@ local M = {}
 ---@field hidden boolean 显示 dotfile（`.` 开头） @default false
 ---@field group_empty_dirs boolean 单链 dir 合并显示 @default true
 ---@field preview boolean VSCode 风单击预览 @default true
+---@field preview_debounce_ms integer 预览防抖延迟（毫秒），光标停顿后才触发预览；0 = 不防抖 @default 138
 ---@field watch boolean libuv fs_event 自动刷新 @default true
 ---@field follow_file boolean 切换 buffer 时自动在树中展开并高亮对应文件（不抢焦点） @default true
+---@field follow_file_debounce_ms integer follow_file BufEnter 防抖延迟（毫秒），用于快速 buffer 切换场景；0 = 不防抖 @default 0
 ---@field cwd string? 默认根目录（nil → vim.fn.getcwd()） @default nil
 ---@field icon_rules VVExplorerIconRule[] @default {}
 ---@field filter VVExplorerFilterConfig @default { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 }
@@ -77,8 +79,10 @@ local defaults = {
   hidden = false,
   group_empty_dirs = true,
   preview = true,
+  preview_debounce_ms = 138,
   watch = true,
   follow_file = true,
+  follow_file_debounce_ms = 0,
   select_move_down = false,
   cwd = nil,
   icon_rules = {},
@@ -269,8 +273,10 @@ end
 local function reveal_no_focus(file)
   if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
 
-  -- 已渲染的树里直接找行（含 symlink 解析口径对齐，见 H.find_row）
-  local existing = Actions.find_row(state, file)
+  -- 精确路径匹配：find_row 的 ancestor 回溯会把「在折叠目录中的文件」误判为已可见，
+  -- 导致光标只移到折叠目录行而跳过展开逻辑。初始判断只检查 file 本身是否已渲染
+  local norm = vim.fs.normalize(file)
+  local existing = state.path_to_row and state.path_to_row[norm]
   if existing then
     local cur = vim.api.nvim_win_get_cursor(state.win)[1]
     if cur ~= existing then
@@ -282,7 +288,7 @@ local function reveal_no_focus(file)
   if not Actions.expand_to_file(state, file) then return end
   Render.render(state)
 
-  -- 展开后再找一次（find_row 内部已做「最深可达祖先」回溯，覆盖 group_empty_dirs 合并）
+  -- 展开后再找一次（find_row 内部含 ancestor 回溯 + symlink 解析，覆盖 group_empty_dirs 合并）
   local lnum = Actions.find_row(state, file)
   if lnum then
     vim.api.nvim_win_set_cursor(state.win, { lnum, 0 })
@@ -345,6 +351,13 @@ function M.setup(opts)
   end
 
   if config.follow_file then
+    local reveal_fn = reveal_no_focus
+    if config.follow_file_debounce_ms > 0 then
+      local cancel_follow
+      reveal_fn, cancel_follow = require('vv-utils.timer').debounce(reveal_no_focus, config.follow_file_debounce_ms)
+      vim.api.nvim_create_autocmd('VimLeavePre', { once = true, callback = cancel_follow })
+    end
+
     vim.api.nvim_create_autocmd('BufEnter', {
       callback = function(ev)
         if not M.is_open() then return end
@@ -355,7 +368,7 @@ function M.setup(opts)
         local file = vim.api.nvim_buf_get_name(ev.buf)
         if file == '' then return end
         if vim.fn.filereadable(file) == 0 and vim.fn.isdirectory(file) == 0 then return end
-        reveal_no_focus(file)
+        reveal_fn(file)
       end,
     })
   end
@@ -380,8 +393,8 @@ end
 --   ephemeral（每次 open 重建）：win, prev_win, rows, path_to_row
 --   persistent（跨 close/open 保留）：buf, root, opts, filter, _watches, _fs_cancel, _rescan_watches
 --
--- close 时只关 win + 清 ephemeral；buf/树数据/fs_event/filter 全部留给下次 open 复用。
--- 这靠 Window.create_buf 设的 bufhidden='hide' 保证窗口关了 buf 不被销毁。
+-- close 时只关 win + 清 ephemeral；buf/树数据/fs_event/filter 全部留给下次 open 复用
+-- 这靠 Window.create_buf 设的 bufhidden='hide' 保证窗口关了 buf 不被销毁
 
 function M.is_open()
   if not state or not state.win or not state.buf then return false end

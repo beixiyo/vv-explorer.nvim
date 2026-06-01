@@ -26,6 +26,9 @@ end
 -- state -> bufnr (weak key，state gc 后自动清理)
 M._preview = setmetatable({}, { __mode = 'k' })
 
+-- state -> cancel fn（debounce timer 清理，state gc 后自动释放引用）
+M._cancel = setmetatable({}, { __mode = 'k' })
+
 -- 必须限定在树所在 tabpage 内搜索。nvim_list_wins() 是跨所有 tab 的，
 -- 用户如果在 tab 1 开了 vv-explorer、在 tab 2 开别的窗口，预览会错把 tab 2
 -- 的窗口当成 "main"，nvim_win_set_buf 会把预览内容推到不相关的 tab 里。
@@ -183,16 +186,28 @@ end
 function M.attach(state)
   local aug = vim.api.nvim_create_augroup('vv-explorer.preview.' .. state.buf, { clear = true })
 
+  local function do_preview()
+    if state._skip_preview then return end
+    if vim.api.nvim_get_current_win() ~= state.win then return end
+    local node = require('vv-explorer.actions').node_under_cursor(state)
+    if not node or node.is_dir then return end
+    M.preview_file(state, node.path)
+  end
+
+  local debounce_ms = state.opts and state.opts.preview_debounce_ms or 0
+  local callback
+  if debounce_ms > 0 then
+    local cancel
+    callback, cancel = require('vv-utils.timer').debounce(do_preview, debounce_ms)
+    M._cancel[state] = cancel
+  else
+    callback = do_preview
+  end
+
   vim.api.nvim_create_autocmd('CursorMoved', {
     group = aug,
     buffer = state.buf,
-    callback = function()
-      if state._skip_preview then return end
-      if vim.api.nvim_get_current_win() ~= state.win then return end
-      local node = require('vv-explorer.actions').node_under_cursor(state)
-      if not node or node.is_dir then return end
-      M.preview_file(state, node.path)
-    end,
+    callback = callback,
   })
 
   -- BufModifiedSet 在 0.13 中被移除，原因是它只在 redraw 时对当前 buffer 触发，
@@ -233,6 +248,10 @@ end
 function M.detach(state)
   pcall(vim.api.nvim_del_augroup_by_name, 'vv-explorer.preview.' .. state.buf)
   M._preview[state] = nil
+  if M._cancel[state] then
+    pcall(M._cancel[state])
+    M._cancel[state] = nil
+  end
 end
 
 return M

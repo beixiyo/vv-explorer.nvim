@@ -20,6 +20,8 @@
 - **删除后清理预览**：删除正在预览的文件时自动关闭对应 buffer
 - **宽度持久化**：调整树宽后跨 session 记住
 - **剪贴板 toggle 累加**：`x`/`y` toggle 文件进/出剪贴板，连按批量标记（Tab 多选后仍为批量替换）
+- **预览防抖**：`preview_debounce_ms`光标停顿后才触发预览，避免快速移动时反复加载
+- **follow_file 防抖**：`follow_file_debounce_ms`（默认 0）用于快速 buffer 切换场景
 
 ### Changed
 
@@ -45,6 +47,7 @@
 - 反复按 `/` 过滤不再泄漏 uv timer
 - 切根（`cd_to`/`cd_up`）后过滤即时重建索引，不再拼出旧 root 的无效路径（并修「构建中途切根永不重建」卡死）
 - 经符号链接打开的文件：删除后 buffer 正确清理（不再像「同名文件被删」）、reveal 光标定位正确
+- follow_file：折叠目录里的文件现在能正确展开定位（原先 `find_row` 的 ancestor 回溯把它误判为已可见，只移光标到折叠目录行而跳过展开）
 - `WinResized`/`WinClosed` autocmd 收进专用 augroup，不再随每次 open 累积
 - reveal 祖先判断改前缀匹配，不再误把内嵌 root 路径的无关文件当后代
 - `git`/`diagnostics` 传 `false`/`true` 不再崩（`setup` 做 table 归一化）
