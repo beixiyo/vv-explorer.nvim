@@ -19,6 +19,7 @@ local ACTIONS = {
   open_split        = { cat = 'Open as',   icon = '' },
   open_vsplit       = { cat = 'Open as',   icon = '' },
   system_open       = { cat = 'Open as',   icon = '' },
+  execute           = { cat = 'Open as',   icon = '󰐊' },
   yank_abs_path     = { cat = 'Yank',      icon = '' },
   create            = { cat = 'Modify',    icon = '' },
   delete            = { cat = 'Modify',    icon = '' },

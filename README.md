@@ -52,7 +52,7 @@ opts = {
   group_empty_dirs = true,     -- 单链目录合并
   preview = true,              -- VSCode 风单击预览
   watch = true,                -- libuv fs_event 自动刷新
-  select_move_down = false,    -- Tab 多选后自动将光标下移一行
+  select_move_down = true,     -- Tab 多选后自动将光标下移一行
   cwd = nil,                   -- 根目录（nil = vim.fn.getcwd()）
   icon_rules = {},             -- 自定义图标规则
 
@@ -123,7 +123,7 @@ opts = {
 
 ### 二进制文件拦截
 
-默认开启。`<CR>`/`l`/`o`/`<C-x>`/`<C-v>`/`<C-t>` 遇到二进制文件时，不在 nvim 内 `:edit`，改用系统默认程序打开；预览（`preview = true`）也会跳过二进制文件。
+默认开启。`<CR>`/`l`/`<C-x>`/`<C-v>` 遇到二进制文件时，不在 nvim 内 `:edit`，改用系统默认程序打开；预览（`preview = true`）也会跳过二进制文件。
 
 ```lua
 -- 放行图片（未来 nvim 原生支持图片预览时）
@@ -145,6 +145,32 @@ opts = { binary = { extensions = { sketch = true } } }
 
 `extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表。
 
+### 执行文件（`X` 键）
+
+按文件类型决定如何执行：**shebang > 扩展名优先级**（命令解析走 `vv-utils.exec.resolve`，取首个 `executable()` 的运行器）。默认 `confirm = true` 会先弹确认框显示将运行的命令。
+
+```lua
+opts = {
+  execute = {
+    enabled = true,
+    confirm = true,           -- 执行前确认（显示命令）；设 false 跳过
+    -- 自定义运行器：默认开原生分屏终端；可改成浮动终端等
+    run = function(cmd, ctx)  -- ctx = { path, cwd, runner }
+      require('tools.term').run(cmd, ctx.cwd)
+    end,
+    -- 透传给 vv-utils.exec.resolve：增减扩展名 / 改优先级
+    opts = {
+      runners = {
+        ts = { { 'bun', 'run' }, { 'tsx' } },  -- ts 优先 bun，其次 tsx
+        rb = { { 'ruby' } },
+      },
+    },
+  },
+}
+```
+
+默认覆盖 `sh/bash/zsh/fish · ts/tsx/mts/cts · js/mjs/cjs · py · lua · rb · pl · php`，以及任何带可用 shebang 的文件
+
 ### 自定义图标规则
 
 ```lua
@@ -163,12 +189,12 @@ icon_rules = {
 
 | 键 | 动作 | 说明 |
 |----|------|------|
-| `<CR>` / `l` / `o` | `open` | 打开文件 / 切换目录展开 |
+| `<CR>` / `l` | `open` | 打开文件 / 切换目录展开 |
 | 单击 | 展开/收起目录 | 文件不动，走预览 |
 | 右键 | `yank_abs_path` | 复制绝对路径到剪贴板 |
 | `h` | `close_node` | 关闭目录 / 跳到父目录 |
-| `=` | `cd_to` | 把光标目录设为根 |
-| `-` | `cd_up` | 返回上级 |
+| `]` | `cd_to` | 进入：把光标目录设为根 |
+| `[` | `cd_up` | 返回上级 |
 | `/` | `start_filter` | 打开过滤提示框 |
 | `<Esc>` | `escape` | 清 filter → 清选区 + 剪贴板标记（一起清）→ 关树 |
 | `q` | `__quit` | 清 filter 或关树 |
@@ -178,8 +204,8 @@ icon_rules = {
 | `Y` | `yank_abs_path` | 复制绝对路径（多选时复制所有） |
 | `<C-x>` | `open_split` | 水平分屏打开 |
 | `<C-v>` | `open_vsplit` | 垂直分屏打开 |
-| `<C-t>` | `open_tab` | 新 tab 打开 |
-| `gx` | `system_open` | 系统默认程序打开 |
+| `o` / `gx` | `system_open` | 系统工具打开：目录→文件管理器，文件→默认程序 |
+| `X` | `execute` | 按文件类型执行（确认后跑在终端） |
 | `a` | `create` | 新建文件（尾随 `/` 为目录） |
 | `d` | `delete` | 删除 / 移入回收站（带确认） |
 | `r` | `rename` | 重命名 |

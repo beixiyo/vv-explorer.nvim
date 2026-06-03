@@ -123,6 +123,41 @@ function L.attach(M, H)
     require('vv-utils.sys').open_default(node.path)
   end
 
+  -- 按文件类型执行光标文件：vv-utils.exec 决定命令 → 确认 → 跑（默认分屏终端，可配 run 覆盖）
+  function M.execute(state)
+    local cfg = state.opts.execute or {}
+    if cfg.enabled == false then return end
+
+    local node = H.node_under_cursor(state)
+    if not node or node.is_dir then return end
+
+    local plan, err = require('vv-utils.exec').resolve(node.path, cfg.opts)
+    if not plan then
+      vim.notify('vv-explorer: ' .. (err or 'cannot run ' .. node.path), vim.log.levels.WARN)
+      return
+    end
+
+    if cfg.confirm ~= false then
+      local prompt = 'vv-explorer execute?\n  ' .. table.concat(plan.cmd, ' ')
+      if vim.fn.confirm(prompt, '&Yes\n&No', 2) ~= 1 then return end
+    end
+
+    local ctx = { path = node.path, cwd = vim.fs.dirname(node.path), runner = plan.runner }
+    if type(cfg.run) == 'function' then
+      cfg.run(plan.cmd, ctx)
+      return
+    end
+
+    -- 兜底：原生分屏终端（零插件依赖）
+    vim.cmd('botright 15new')
+    if vim.fn.has('nvim-0.11') == 1 then
+      vim.fn.jobstart(plan.cmd, { term = true, cwd = ctx.cwd })
+    else
+      vim.fn.termopen(plan.cmd, { cwd = ctx.cwd })
+    end
+    vim.cmd('startinsert')
+  end
+
   function M.toggle_gitignored(state)
     state.opts.git = state.opts.git or {}
     state.opts.git.show_ignored = not state.opts.git.show_ignored

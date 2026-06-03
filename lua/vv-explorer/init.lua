@@ -54,6 +54,12 @@ local M = {}
 ---@field intercept boolean 拦截二进制文件：不在 nvim 打开，改用系统默认程序 @default true
 ---@field extensions table<string, boolean> 视为二进制的扩展名集合（小写 key） @default { png = true, jpg = true, ... }
 
+---@class VVExplorerExecuteConfig
+---@field enabled boolean  启用 `X` 执行光标文件 @default true
+---@field confirm boolean  执行前弹确认框（显示将运行的命令，安全） @default true
+---@field run fun(cmd:string[], ctx:table)?  自定义运行器（ctx 含 path/cwd/runner）；缺省用原生分屏终端 @default nil
+---@field opts VVExecConfig?  透传给 vv-utils.exec.resolve（运行器优先级 / shebang 等） @default {}
+
 ---@class VVExplorerConfig
 ---@field position 'left'|'right' @default 'left'
 ---@field width integer @default 32
@@ -70,7 +76,8 @@ local M = {}
 ---@field git VVExplorerGitConfig @default { enabled = true, show_ignored = false }
 ---@field diagnostics VVExplorerDiagnosticsConfig @default { enabled = true }
 ---@field binary VVExplorerBinaryConfig @default { intercept = true, extensions = { ... } }
----@field select_move_down boolean  多选时 Tab 切换选中后自动将光标下移一行（默认 true） @default false
+---@field execute VVExplorerExecuteConfig  `X` 按文件类型执行光标文件 @default { enabled = true, confirm = true, opts = {} }
+---@field select_move_down boolean  多选时 Tab 切换选中后自动将光标下移一行 @default true
 ---@field global_mappings VVExplorerGlobalMappings|false  全局快捷键（整个 nvim 范围）；设 false 禁用所有 @default { toggle = '<leader>E', reveal = '<leader>e' }
 ---@field mappings table<string, string|false|fun(state:table)>  树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state） @default { ... }
 local defaults = {
@@ -83,7 +90,7 @@ local defaults = {
   watch = true,
   follow_file = true,
   follow_file_debounce_ms = 0,
-  select_move_down = false,
+  select_move_down = true,
   cwd = nil,
   icon_rules = {},
   filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },
@@ -116,6 +123,11 @@ local defaults = {
       sqlite = true, db = true,
     },
   },
+  execute = {
+    enabled = true,
+    confirm = true,
+    opts = {},
+  },
   trash = {
     enabled = true,
     max_items = 5000,
@@ -131,7 +143,7 @@ local defaults = {
     ['<C-y>'] = 'scroll_preview_up',
     ['<CR>']  = 'open',
     ['l']     = 'open',
-    ['o']     = 'open',
+    ['o']     = 'system_open', -- 系统工具打开：目录→文件管理器，文件→默认程序（展开/打开仍在 <CR>/l）
     ['<LeftRelease>'] = function(s)
       local node = Actions.node_under_cursor(s)
       if node and node.is_dir then Actions.open(s) end
@@ -150,8 +162,8 @@ local defaults = {
     ['<M-i>'] = 'toggle_gitignored',
     ['R']     = 'refresh',
     ['Y']     = 'yank_abs_path',   -- 绝对路径
-    ['=']     = 'cd_to',
-    ['-']     = 'cd_up',
+    [']']     = 'cd_to', -- 进入：把光标目录设为根
+    ['[']     = 'cd_up', -- 返回：上一级目录
     ['/']     = 'start_filter',
     ['<Esc>'] = 'escape', -- 优先级：filter > selection > 无操作
     ['q']     = '__quit',  -- filter 模式时清 filter，否则关树
@@ -160,6 +172,7 @@ local defaults = {
     ['<C-x>'] = 'open_split',
     ['<C-v>'] = 'open_vsplit',
     ['gx']    = 'system_open',
+    ['X']     = 'execute',     -- 按文件类型执行（确认后跑在终端）
     -- CRUD
     ['a']     = 'create',      -- 新建，尾随 '/' 视为目录
     ['d']     = 'delete',      -- 删除（带确认，批量）
@@ -329,6 +342,13 @@ function M.setup(opts)
     config.diagnostics = vim.tbl_deep_extend('force', {}, defaults.diagnostics)
   end
 
+  -- execute: false → 关闭（执行任意代码的安全退出，尊重直觉写法）, true → 默认, table → 合并
+  if config.execute == false then
+    config.execute = { enabled = false }
+  elseif config.execute == true then
+    config.execute = vim.tbl_deep_extend('force', {}, defaults.execute)
+  end
+
   Icons.compile(config.icon_rules)
   register_highlights()
 
@@ -340,6 +360,9 @@ function M.setup(opts)
   vim.api.nvim_create_user_command('VVExplorerTrash', function()
     Trash.open_panel(state)
   end, { desc = 'vv-explorer: open trash panel' })
+  vim.api.nvim_create_user_command('VVExplorerExecute', function()
+    if state then Actions.execute(state) end
+  end, { desc = 'vv-explorer: execute file under cursor' })
 
   -- 全局键位：用户想自己管就 setup({ global_mappings = false })
   if config.global_mappings then

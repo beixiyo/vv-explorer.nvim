@@ -4,6 +4,7 @@
 
 ### Added
 
+- **`X` 执行文件**：按文件类型（shebang / 扩展名优先级）解析运行器并在终端执行；执行前默认弹确认框显示命令（`execute.confirm` 可关），运行器可配（`execute.run`，默认原生分屏终端）；命令解析复用 `vv-utils.exec`
 - **拖拽粘贴**：从文件管理器拖文件到 explorer，复制到光标所在目录（多文件、同名自动重命名）
 - **`<Esc>` 清剪贴板标记**：优先级 `filter > 选区+剪贴板 > 关树`，一键取消 cut/copy 标记
 - **V 模式屏蔽**：树 buffer 里 `v`/`V` → `<Nop>`（`<C-v>` 仍是 vsplit）
@@ -25,6 +26,7 @@
 
 ### Changed
 
+- **`o` 键改为系统工具打开**：从 `open`（展开/打开）改为 `system_open`，目录→系统文件管理器、文件→默认程序（复用 `vv-utils.sys.open_default`）；展开/打开仍在 `<CR>`/`l`
 - **移除 `<C-t>` open_tab**：新 tab 打开脱离 explorer 上下文、无人用
 - **图标路由优化**：优先走 `vv-icons` 取状态图标，兼容全局 `MiniIcons`
 - **键位**：`cd_to` 从 `<C-]>` 改为 `=`（与 `-` cd_up 对称）
