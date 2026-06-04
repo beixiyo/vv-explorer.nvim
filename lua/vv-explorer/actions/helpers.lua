@@ -173,11 +173,12 @@ function H.focus_path(state, path)
   end
 end
 
+-- 把 buffer 行号映射到树节点。过滤模式与普通模式行↔节点偏移不同（普通模式行 1 为 root，
+-- rows 从行 2 起；过滤模式无 root 行，rows 从行 1 起），与 render / render_filter 对齐。
 ---@param state table
+---@param lnum integer  1-based buffer 行号
 ---@return table?
-function H.node_under_cursor(state)
-  if not vim.api.nvim_win_is_valid(state.win) then return nil end
-  local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+function H.node_at_line(state, lnum)
   local f = state.filter
   if f and f.active and (f.query or '') ~= '' then
     local row = state.rows and state.rows[lnum]
@@ -186,6 +187,14 @@ function H.node_under_cursor(state)
   if lnum == 1 then return state.root end
   local row = state.rows and state.rows[lnum - 1]
   return row and row.node or nil
+end
+
+---@param state table
+---@return table?
+function H.node_under_cursor(state)
+  if not vim.api.nvim_win_is_valid(state.win) then return nil end
+  local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+  return H.node_at_line(state, lnum)
 end
 
 -- 在 explorer 窗内执行 split-like 命令打开 path，并把新窗口 chrome 拉回全局默认

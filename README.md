@@ -110,7 +110,7 @@ opts = {
 
 ### 回收站
 
-删除的文件移入 `~/.local/share/vv-explorer/trash/`，附带元数据（原始路径、时间、大小）用于恢复。按 `T` 或 `:VVExplorerTrash` 打开回收站面板。
+删除的文件移入 `~/.local/share/vv-explorer/trash/`，附带元数据（原始路径、时间、大小）用于恢复。按 `T` 或 `:VVExplorerTrash` 打开回收站面板
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
@@ -119,11 +119,11 @@ opts = {
 | `trash.warn_size_mb` | `500` | 打开 explorer 时异步扫描，超过则弹通知 |
 | `trash.scan_on_open` | `true` | 是否启用启动时扫描 |
 
-设 `trash = false` 可完全禁用回收站。
+设 `trash = false` 可完全禁用回收站
 
 ### 二进制文件拦截
 
-默认开启。`<CR>`/`l`/`<C-x>`/`<C-v>` 遇到二进制文件时，不在 nvim 内 `:edit`，改用系统默认程序打开；预览（`preview = true`）也会跳过二进制文件。
+默认开启。`<CR>`/`l`/`<C-x>`/`<C-v>` 遇到二进制文件时，不在 nvim 内 `:edit`，改用系统默认程序打开；预览（`preview = true`）也会跳过二进制文件
 
 ```lua
 -- 放行图片（未来 nvim 原生支持图片预览时）
@@ -143,11 +143,11 @@ opts = { binary = { intercept = false } }
 opts = { binary = { extensions = { sketch = true } } }
 ```
 
-`extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表。
+`extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表
 
 ### 执行文件（`X` 键）
 
-按文件类型决定如何执行：**shebang > 扩展名优先级**（命令解析走 `vv-utils.exec.resolve`，取首个 `executable()` 的运行器）。默认 `confirm = true` 会先弹确认框显示将运行的命令。
+按文件类型决定如何执行：**shebang > 扩展名优先级**（命令解析走 `vv-utils.exec.resolve`，取首个 `executable()` 的运行器）。默认 `confirm = true` 会先弹确认框显示将运行的命令
 
 ```lua
 opts = {
@@ -212,11 +212,26 @@ icon_rules = {
 | `y` | `copy_mark` | 标记复制 |
 | `x` | `cut_mark` | 标记剪切 |
 | `p` | `paste` | 粘贴到光标目录 |
-| 拖拽 | `drop_paste` | 从文件管理器拖入，复制到光标目录 |
+| 拖拽 | — | 从文件管理器拖文件/文件夹进来复制（详见下方「拖拽落点」） |
 | `<Tab>` | `toggle_select` | 切换多选 |
 | `T` | `trash_panel` | 打开回收站面板 |
 | `<C-e>` / `<C-y>` | 滚动预览 | 滚动主窗口预览 |
 | `g?` | `help` | 键位帮助浮窗 |
+
+### 拖拽落点（drag-and-drop）
+
+从系统文件管理器（Finder 等）把**文件 / 文件夹**拖进 explorer 窗口即复制进来。支持多选、文件夹（递归复制）
+
+两种模式，**按环境自动选择**：
+
+| 环境 | 行为 |
+|------|------|
+| **kitty ≥ 0.47 且 nvim 不挂 tmux** | VSCode 风：按**鼠标松手的落点目录**复制，拖拽经过时**实时高亮**目标目录行（走 kitty DnD 协议 OSC 72） |
+| **tmux / 其它终端** | 自动降级：复制到**键盘光标所在目录**、无高亮（走 bracketed paste）。tmux 不透传入站 OSC 72，这是 tmux 的限制，非本插件可绕过 |
+
+- **安全**：目标已存在同名文件/目录时**自动改名** `xxx (copy)` / `xxx (copy 2)`，**绝不覆盖或删除**任何已存在内容
+- **为何落点需脱 tmux**：落点坐标由终端经 OSC 72 上报，tmux 作为中间终端模拟器不转发该入站序列（kitty DnD 协议留有 `i=` 多路复用器字段，需 tmux 侧实现，目前尚无）。无坐标时退回光标目录方案
+- 关闭落点协议、只保留粘贴回退：`require('vv-utils.drop').setup({ kitty_dnd = false })`
 
 ### 过滤提示框
 

@@ -218,6 +218,7 @@ local function register_highlights()
     VVExplorerFile       = { link = 'Normal' },
     VVExplorerRoot       = { link = 'Title' },
     VVExplorerSelected   = { link = 'Visual' }, -- 选区整行底色
+    VVExplorerDropTarget = { bg = '#264f78' },   -- 拖拽落点目标目录整行高亮（VSCode list.dropBackground 风）
     VVExplorerDim        = { link = 'Comment' }, -- dotfile + gitignored 暗色
     -- 诊断符号（Phase 2）—— hl 名已迁移至 VVDiag*（vv-utils.diagnostics）
     VVDiagError = { link = 'DiagnosticError' },
@@ -408,12 +409,8 @@ function M.setup(opts)
     end,
   })
 
-  local drop = require('vv-utils.drop')
-  drop.register(function(paths)
-    if not state or vim.api.nvim_get_current_buf() ~= state.buf then return false end
-    vim.schedule(function() Actions.drop_paste(state, paths) end)
-    return true
-  end)
+  -- 拖拽：kitty DnD 落点（脱 tmux）→ 复制到落点目录 + 实时高亮；否则回退到光标目录 / 打开文件
+  require('vv-explorer.dnd').attach(function() return state end)
 end
 
 -- state 的生命周期分两类字段：

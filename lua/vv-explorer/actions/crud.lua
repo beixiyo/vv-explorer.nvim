@@ -275,34 +275,53 @@ function L.attach(M, H)
     end
   end
 
-  function M.drop_paste(state, paths)
+  -- 把 paths 复制进 dest_dir。安全保证：同名一律走 Fs.unique_dest 自增改名，
+  -- 绝不删除/覆盖已存在文件或目录（曾因「覆盖=递归删目录」删光真实项目含 .git）。
+  ---@param state table
+  ---@param paths string[]
+  ---@param dest_dir string
+  function M.drop_into(state, paths, dest_dir)
     H.ensure_state_fields(state)
-    local node = H.node_under_cursor(state)
-    local dest_dir = dir_context(state, node)
     local last_dst
-
+    local done = 0
     local failed = {}
+
     for _, src in ipairs(paths) do
-      local dst = Fs.unique_dest(dest_dir .. '/' .. vim.fs.basename(src))
-      local ok, err = pcall(Fs.copy, src, dst)
-      if not ok then
-        failed[#failed + 1] = tostring(err)
+      -- 落点目录就是 src 自身或落在 src 子树内 → 跳过，避免把目录拷进自己
+      if dest_dir == src or dest_dir:sub(1, #src + 1) == src .. '/' then
+        failed[#failed + 1] = 'skip: ' .. src .. ' → inside itself'
       else
-        last_dst = dst
+        local dst = Fs.unique_dest(dest_dir .. '/' .. vim.fs.basename(src))
+        local ok, err = pcall(Fs.copy, src, dst)
+        if not ok then
+          failed[#failed + 1] = tostring(err)
+        else
+          last_dst = dst
+          done = done + 1
+        end
       end
     end
 
     if #failed > 0 then
       vim.notify('vv-explorer: drop errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
-    else
-      vim.notify(('Dropped %d item(s) → %s'):format(#paths, vim.fn.fnamemodify(dest_dir, ':.')))
+    elseif done > 0 then
+      vim.notify(('Dropped %d item(s) → %s'):format(done, vim.fn.fnamemodify(dest_dir, ':.')))
     end
+
     after_fs_change(state)
     if last_dst then
       Tree.expand_to(state.root, last_dst)
       Render.render(state)
       H.focus_path(state, last_dst)
     end
+  end
+
+  -- 无坐标的拖拽回退（bracketed paste，如 tmux）：复制到光标所在目录
+  ---@param state table
+  ---@param paths string[]
+  function M.drop_paste(state, paths)
+    local node = H.node_under_cursor(state)
+    M.drop_into(state, paths, dir_context(state, node))
   end
 end
 
