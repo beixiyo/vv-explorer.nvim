@@ -4,6 +4,8 @@
 
 ### Added
 
+- **LSP 文件重命名**：rename（`r`）时自动通知 LSP 服务端。流程：向支持 `workspace/willRenameFiles` 的客户端发异步请求 → apply 返回的 workspace edits（如更新 import 路径）→ 执行磁盘重命名 → 发 `workspace/didRenameFiles` 通知。无支持客户端时零开销直接重命名。等待期间在树行末尾显示 loading 动画（来自 `vv-utils.loading`），同时跳过该行 git/诊断图标渲染。`lsp_rename_timeout_ms`（默认 5000ms）可配，超时后英文 warn 并继续执行重命名。LSP 协议层独立于 `lua/vv-explorer/lsp.lua`
+
 - **`X` 执行文件**：按文件类型（shebang / 扩展名优先级）解析运行器并在终端执行；执行前默认弹确认框显示命令（`execute.confirm` 可关），运行器可配（`execute.run`，默认原生分屏终端）；命令解析复用 `vv-utils.exec`
 - **拖拽落点（VSCode 风）**：从文件管理器拖文件到 explorer，按**鼠标松手的落点目录**复制（拖拽经过时实时高亮目标目录行）。基于 kitty DnD 协议（OSC 72，kitty ≥ 0.47 且 nvim 不挂 tmux 时生效）；不支持的终端（tmux 等）自动回退到「复制到光标目录 / 打开文件」。多文件、同名自动重命名 `(copy N)`，**绝不覆盖/删除已存在文件或目录**
 - **`<Esc>` 清剪贴板标记**：优先级 `filter > 选区+剪贴板 > 关树`，一键取消 cut/copy 标记

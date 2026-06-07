@@ -201,10 +201,12 @@ function M.render(state)
 
   local git = state.git
   local diag = state.diagnostics
+  local renaming_path = state._lsp_renaming_path
   for _, row in ipairs(rows) do
     local node = row.node
-    local git_sym = git and git.status_map and Git.symbol_for(git.status_map[node.path])
-    local diag_sym = diag and Diagnostics.symbol_for(diag[node.path])
+    local is_renaming = renaming_path and node.path == renaming_path
+    local git_sym = (not is_renaming) and git and git.status_map and Git.symbol_for(git.status_map[node.path])
+    local diag_sym = (not is_renaming) and diag and Diagnostics.symbol_for(diag[node.path])
     local line, ems, name_col = build_row_visual({
       depth = row.depth,
       is_dir = node.is_dir,
@@ -214,8 +216,8 @@ function M.render(state)
       path = node.path,
       dim = is_dim(state, node.path, node.hidden),
       clipboard = cb_set[node.path] and cb_mode or nil,
-      git_symbol = git_sym,
-      diag_symbol = diag_sym,
+      git_symbol = git_sym or nil,
+      diag_symbol = diag_sym or nil,
     })
     lines[#lines + 1] = line
     local lnum = #lines - 1
@@ -399,8 +401,9 @@ function M.render_filter(state)
 
     local git = state.git
     local diag = state.diagnostics
-    local git_sym = git and git.status_map and Git.symbol_for(git.status_map[path])
-    local diag_sym = diag and Diagnostics.symbol_for(diag[path])
+    local is_renaming = state._lsp_renaming_path and path == state._lsp_renaming_path
+    local git_sym = (not is_renaming) and git and git.status_map and Git.symbol_for(git.status_map[path])
+    local diag_sym = (not is_renaming) and diag and Diagnostics.symbol_for(diag[path])
     local line, ems, name_col = build_row_visual({
       depth = depth,
       is_dir = is_dir,
@@ -412,8 +415,8 @@ function M.render_filter(state)
       basename_byte_offset = #rel - #name,
       dim = is_dim(state, path, name:sub(1, 1) == '.'),
       clipboard = cb_set[path] and cb_mode or nil,
-      git_symbol = git_sym,
-      diag_symbol = diag_sym,
+      git_symbol = git_sym or nil,
+      diag_symbol = diag_sym or nil,
     })
     lines[#lines + 1] = line
     local lnum = #lines - 1

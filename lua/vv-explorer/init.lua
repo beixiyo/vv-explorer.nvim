@@ -78,6 +78,7 @@ local M = {}
 ---@field binary VVExplorerBinaryConfig @default { intercept = true, extensions = { ... } }
 ---@field execute VVExplorerExecuteConfig  `X` 按文件类型执行光标文件 @default { enabled = true, confirm = true, opts = {} }
 ---@field select_move_down boolean  多选时 Tab 切换选中后自动将光标下移一行 @default true
+---@field lsp_rename_timeout_ms integer  rename 时 willRenameFiles 请求的超时毫秒数，超时后继续执行文件重命名 @default 5000
 ---@field global_mappings VVExplorerGlobalMappings|false  全局快捷键（整个 nvim 范围）；设 false 禁用所有 @default { toggle = '<leader>E', reveal = '<leader>e' }
 ---@field mappings table<string, string|false|fun(state:table)>  树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state） @default { ... }
 local defaults = {
@@ -91,6 +92,7 @@ local defaults = {
   follow_file = true,
   follow_file_debounce_ms = 0,
   select_move_down = true,
+  lsp_rename_timeout_ms = 5000,
   cwd = nil,
   icon_rules = {},
   filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },

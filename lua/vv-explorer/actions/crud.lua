@@ -5,6 +5,8 @@ local Render = require('vv-explorer.render')
 local Preview = require('vv-explorer.preview')
 local Fs = require('vv-utils.fs')
 local Trash = require('vv-explorer.trash')
+local Lsp = require('vv-explorer.lsp')
+local Loading = require('vv-utils.loading')
 
 local L = {}
 
@@ -174,17 +176,47 @@ function L.attach(M, H)
     vim.ui.input({ prompt = 'Rename: ', default = node.name }, function(new_name)
       if not new_name or new_name == '' or new_name == node.name then return end
       local new_path = vim.fs.normalize(vim.fs.dirname(old) .. '/' .. new_name)
+      local timeout_ms = (state.opts and state.opts.lsp_rename_timeout_ms) or 5000
 
-      local ok, err = pcall(Fs.rename, old, new_path)
-      if not ok then
-        vim.notify('vv-explorer: ' .. tostring(err), vim.log.levels.ERROR)
+      local function finish_rename()
+        local ok, err = pcall(Fs.rename, old, new_path)
+        if not ok then
+          vim.notify('vv-explorer: ' .. tostring(err), vim.log.levels.ERROR)
+          return
+        end
+        Fs.sync_buffers(old, new_path)
+        Lsp.did_rename(old, new_path)
+        after_fs_change(state)
+        Tree.expand_to(state.root, new_path)
+        Render.render(state)
+        H.focus_path(state, new_path)
+      end
+
+      -- 无支持客户端则直接重命名，不触发 loading / re-render
+      if #Lsp.will_rename_clients() == 0 then
+        finish_rename()
         return
       end
-      Fs.sync_buffers(old, new_path)
-      after_fs_change(state)
-      Tree.expand_to(state.root, new_path)
+
+      -- 标记正在重命名的路径，让 render 跳过该行的 git/diag 图标
+      state._lsp_renaming_path = old
       Render.render(state)
-      H.focus_path(state, new_path)
+      local stop_loading = Loading.start({
+        buf     = state.buf,
+        get_row = function() return state.path_to_row and state.path_to_row[old] end,
+      })
+
+      Lsp.will_rename_async(old, new_path, timeout_ms, function(timed_out)
+        stop_loading()
+        state._lsp_renaming_path = nil
+        if timed_out then
+          vim.notify(
+            ('vv-explorer: LSP willRenameFiles timed out after %dms, proceeding anyway'):format(timeout_ms),
+            vim.log.levels.WARN
+          )
+        end
+        finish_rename()
+      end)
     end)
   end
 
