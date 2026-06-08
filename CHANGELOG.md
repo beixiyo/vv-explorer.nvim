@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **git 状态不刷新（外部变更）**：commit/push 等只动 `.git/`（index/HEAD）的操作不会在工作树目录上产生 fs_event，导致 watch.lua 监听不到、git 状态标记滞留。现订阅 vv-git 的 `User VVGitStatusChanged` 即时刷新，并叠加 `FocusGained`/`TermClose`/`TermLeave` 兜底外部工具（ClaudeCode/Codex 等直接跑 git）的场景；detach 时清理对应 augroup
+
 ### Added
 
 - **LSP 文件重命名**：rename（`r`）时自动通知 LSP 服务端。流程：向支持 `workspace/willRenameFiles` 的客户端发异步请求 → apply 返回的 workspace edits（如更新 import 路径）→ 执行磁盘重命名 → 发 `workspace/didRenameFiles` 通知。无支持客户端时零开销直接重命名。等待期间在树行末尾显示 loading 动画（来自 `vv-utils.loading`），同时跳过该行 git/诊断图标渲染。`lsp_rename_timeout_ms`（默认 5000ms）可配，超时后英文 warn 并继续执行重命名。LSP 协议层独立于 `lua/vv-explorer/lsp.lua`

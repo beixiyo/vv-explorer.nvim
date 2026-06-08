@@ -4,7 +4,7 @@
 -- ignored 检测策略（v2）：
 --   不再用 `git status --ignored`（HOME-as-repo 递归扫全盘 13s+），
 --   改为 `git ls-files --others --ignored --directory`：
---   `--directory` 让 git 不递归进 ignored 目录，20ms 拿到全量 ignored。
+--   `--directory` 让 git 不递归进 ignored 目录，20ms 拿到全量 ignored
 
 local UGit = require('vv-utils.git')
 local Timer = require('vv-utils.timer')
@@ -76,6 +76,26 @@ function M.attach(state)
     refresh_ignored()
   end
 
+  -- 外部 git 状态变更的刷新触发器（watch.lua 的 fs_event 只感知工作树文件变化，
+  -- 感知不到 .git/ 里的 index/HEAD 变更，故 commit/push 等不会触发它）：
+  --   * User VVGitStatusChanged —— vv-git 的 stage/commit/push 等操作完成后广播（即时）
+  --   * FocusGained ——————————— 从别的窗口/另一个 nvim 切回来（独立终端里跑 git 的场景）
+  --   * TermClose/TermLeave ————— 退出内嵌终端（ClaudeCode/Codex 在 :terminal 里直接跑 git）
+  -- 三条 refresh 各自 200ms 去抖，重复/同 tick 的事件会自动合并
+  local aug = vim.api.nvim_create_augroup('VVExplorerGitRefresh', { clear = true })
+  local function on_external_change()
+    if state.git and state.git.refresh then state.git.refresh() end
+  end
+  vim.api.nvim_create_autocmd({ 'FocusGained', 'TermClose', 'TermLeave' }, {
+    group = aug,
+    callback = on_external_change,
+  })
+  vim.api.nvim_create_autocmd('User', {
+    group = aug,
+    pattern = 'VVGitStatusChanged',
+    callback = on_external_change,
+  })
+
   -- 首次：三条线并行跑，各自完成各自重画
   run_tracked()
   run_status()
@@ -85,6 +105,7 @@ end
 ---@param state table
 function M.detach(state)
   if not state or not state.git then return end
+  pcall(vim.api.nvim_del_augroup_by_name, 'VVExplorerGitRefresh')
   for _, cancel in ipairs(state.git._cancels or {}) do
     pcall(cancel)
   end
