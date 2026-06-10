@@ -145,6 +145,7 @@ local defaults = {
     ['<C-y>'] = 'scroll_preview_up',
     ['<CR>']  = 'open',
     ['l']     = 'open',
+    ['gf']    = 'open', -- 接管原生 gf：树窗 winfixbuf 下原生 gf 会 E1513，统一走 open（打开节点/展开目录）
     ['o']     = 'system_open', -- 系统工具打开：目录→文件管理器，文件→默认程序（展开/打开仍在 <CR>/l）
     ['<LeftRelease>'] = function(s)
       local node = Actions.node_under_cursor(s)
