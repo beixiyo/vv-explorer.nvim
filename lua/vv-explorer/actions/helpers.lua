@@ -6,14 +6,14 @@ local Fs = require('vv-utils.fs')
 
 local H = {}
 
--- 把一个「真实路径形」的 file 映射回「树内可达」的符号链接形路径，供 Tree.expand_to 使用。
+-- 把一个「真实路径形」的 file 映射回「树内可达」的符号链接形路径，供 Tree.expand_to 使用
 --
 -- 场景：用户经符号链接目录打开文件（`linkdir/bar.txt`），`nvim_buf_get_name` 返回解析形
 -- （`/external/realdir/bar.txt`，可能完全在 root 之外）。直接 `expand_to(root, 解析形)` 因
 -- 不在 root 下而失败，导致 reveal 无法展开、光标停在 root。此函数遍历已知树节点，找出某个
--- 节点真实路径恰为 file 真实路径前缀者，用「该节点的树内路径 + 剩余段」拼出树内路径。
+-- 节点真实路径恰为 file 真实路径前缀者，用「该节点的树内路径 + 剩余段」拼出树内路径
 --
--- 仅扫描已 scan 的节点（懒加载下顶层目录已在 root.children 里），命中即按需深入。
+-- 仅扫描已 scan 的节点（懒加载下顶层目录已在 root.children 里），命中即按需深入
 ---@param state table
 ---@param file string
 ---@return string in_tree_path  无法映射时回退 normalize(file)
@@ -65,36 +65,51 @@ function H.expand_to_file(state, file)
   return Tree.expand_to(state.root, H.to_tree_path(state, file))
 end
 
--- 在 state.path_to_row 中为 file 找到目标行号（用于 reveal / follow_file 定位光标）。
+-- 在 state.path_to_row 中为 file 找到目标行号（用于 reveal / follow_file 定位光标）
 --
 -- 难点：`path_to_row` 的 key 是树节点路径（`vim.fs.normalize`，**不解析符号链接**），
 -- 而 follow/reveal 传入的 file 多来自 `nvim_buf_get_name`（Vim 已把符号链接**解析**成
--- 真实路径）。symlink 场景下两者字符串不等 → 直查 miss → 光标爬到错误祖先行。
+-- 真实路径）。symlink 场景下两者字符串不等 → 直查 miss → 需在真实路径空间比对
+--
+-- `strict`：
+--   * false（默认）→ 直查 miss 时沿父目录**祖先回溯**，找到最近可见祖先行
+--   * true → 只认 file **自身**那一行（含 symlink 解析、group_empty_dirs 合并到上层
+--     的中间目录），定位不到就返回 nil，**绝不回溯到祖先**。reveal/follow 用它，
+--     避免「隐藏/被过滤的文件落在某可见祖先行 → 光标强制跳到别处」（group_empty_dirs
+--     已把链上每个目录都写进 path_to_row，故合并目录仍走直查命中，无需回溯）
 --
 -- 策略（先快后慢，无 symlink 时零额外开销）：
---   1. 直查 normalize(file)；命中即返回（覆盖绝大多数普通路径）。
+--   1. 直查 normalize(file)；命中即返回（覆盖绝大多数普通路径）
 --   2. miss → 把 file 解析为真实路径，并把每个 path_to_row key 也解析为真实路径后比对
---      （含「最深可达祖先」回溯：reveal target 可能被 group_empty_dirs 合并到上层）。
---      仅在直查失败时才做这趟解析扫描，不拖累常规渲染/移动。
+--      仅在直查失败时才做这趟解析扫描，不拖累常规渲染/移动
 ---@param state table
 ---@param file string
+---@param strict? boolean  true 时只匹配 file 自身，不回溯祖先（reveal/follow 用）
 ---@return integer? lnum
-function H.find_row(state, file)
+function H.find_row(state, file, strict)
   local map = state.path_to_row
   if not map then return nil end
 
   -- 1) 快路径：普通路径两侧口径一致，直接命中
   local p = vim.fs.normalize(file)
-  while p ~= '' do
-    local l = map[p]
-    if l then return l end
-    local parent = vim.fs.dirname(p)
-    if parent == p then break end
-    p = parent
+  if strict then
+    if map[p] then return map[p] end
+  else
+    while p ~= '' do
+      local l = map[p]
+      if l then return l end
+      local parent = vim.fs.dirname(p)
+      if parent == p then break end
+      p = parent
+    end
   end
 
+  -- 无 symlink（真实路径与规范化路径一致）时，慢路径不可能比快路径多命中，直接收工
+  local rp = Fs.realpath(file)
+  if strict and rp == p then return nil end
+
   -- 2) 慢路径：symlink 解析后在真实路径空间比对
-  -- 预解析所有 key 的真实路径（一次扫描），再用 file 真实路径逐级祖先回溯命中
+  -- 预解析所有 key 的真实路径（一次扫描），再用 file 真实路径（strict 仅自身 / 否则逐级祖先）命中
   local real_to_row = {}
   for key, l in pairs(map) do
     local rk = Fs.realpath(key)
@@ -104,7 +119,11 @@ function H.find_row(state, file)
     end
   end
 
-  local rp = Fs.realpath(file)
+  if strict then
+    local hit = real_to_row[rp]
+    return hit and hit.lnum or nil
+  end
+
   while rp ~= '' do
     local hit = real_to_row[rp]
     if hit then return hit.lnum end
@@ -118,15 +137,15 @@ end
 
 H.EMPTY_MATCHED = { abs = {}, rels = {}, positions = {}, total_count = 0 }
 
--- 统一失效过滤索引：清空全树索引及其派生缓存，并复位「正在构建」标志。
+-- 统一失效过滤索引：清空全树索引及其派生缓存，并复位「正在构建」标志
 --
 -- 凡是会改变「可见文件集合」的操作（切根 cd_to/cd_up、增删改、切 hidden/gitignored、
 -- refresh）都必须调它，否则旧索引（旧 root 的绝对路径 / 旧配置的路径集）会被
 -- ensure_filter_index / refilter 复用，导致用「新 root + 旧 rels」拼出磁盘上不存在
--- 的错误绝对路径。集中一处清，避免每个入口各写一遍、漏字段。
+-- 的错误绝对路径。集中一处清，避免每个入口各写一遍、漏字段
 --
 -- index_building 一并复位为 false：否则某次构建中途切根，残留 true 会让
--- ensure_filter_index 误判「仍在 building」而永不重建（卡 building）。
+-- ensure_filter_index 误判「仍在 building」而永不重建（卡 building）
 ---@param state table
 function H.invalidate_filter_index(state)
   local f = state.filter
@@ -174,7 +193,7 @@ function H.focus_path(state, path)
 end
 
 -- 把 buffer 行号映射到树节点。过滤模式与普通模式行↔节点偏移不同（普通模式行 1 为 root，
--- rows 从行 2 起；过滤模式无 root 行，rows 从行 1 起），与 render / render_filter 对齐。
+-- rows 从行 2 起；过滤模式无 root 行，rows 从行 1 起），与 render / render_filter 对齐
 ---@param state table
 ---@param lnum integer  1-based buffer 行号
 ---@return table?

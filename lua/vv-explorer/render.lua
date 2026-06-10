@@ -261,13 +261,14 @@ end
 
 -- 把光标移到 state._pending_reveal 指向的行并清除 pending。
 --
--- 背景：reveal 目标若位于「hidden + git tracked」目录下，该目录要等 git 的
--- is_tracked 异步就绪后才会进入 flatten；在此之前整棵子树被过滤，find_row 沿祖先
--- 回退到 root（行 1）。故 reveal 当下定位不到，记下 pending，待 git 完成触发的
--- render_stable 把目标行渲染出来后由本函数归位。
+-- 用 strict 定位（find_row 第三参数）：只在「目标文件自身那一行已渲染」时归位，
+-- 绝不回溯到祖先。否则隐藏/被过滤的文件（dotfile 未跟踪、gitignored）会让光标强制
+-- 跳到最近的可见祖先目录行——用户并未要求看那一行。
 --
--- lnum == 1 视为「尚未就绪」（行 1 恒为 root，合法 reveal 目标不可能落在此），
--- 保留 pending 等下一次渲染。
+-- 定位不到时保留 pending：合法的「暂时不可见」只有一种——「hidden + git tracked」目录
+-- 要等 git 的 is_tracked 异步就绪后才进入 flatten，期间整棵子树被过滤。待 git 完成触发
+-- 的 render_stable 把目标行渲染出来，本函数再归位。真正被永久隐藏的文件则 strict 恒 miss，
+-- 光标始终不动，正合预期。
 ---@param state table
 ---@return boolean positioned  成功归位（已清 pending）返回 true
 function M.try_reveal_cursor(state)
@@ -275,7 +276,7 @@ function M.try_reveal_cursor(state)
   if not file then return false end
   if not state.win or not vim.api.nvim_win_is_valid(state.win) then return false end
 
-  local lnum = require('vv-explorer.actions').find_row(state, file)
+  local lnum = require('vv-explorer.actions').find_row(state, file, true)
   if not lnum or lnum == 1 then return false end
 
   pcall(vim.api.nvim_win_set_cursor, state.win, { lnum, 0 })

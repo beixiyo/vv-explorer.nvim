@@ -310,7 +310,7 @@ local function reveal_no_focus(file)
   end
   Render.render(state)
 
-  -- 目标行已渲染则归位（find_row 含 ancestor 回溯 + symlink 解析，覆盖 group_empty_dirs）；
+  -- 目标行已渲染则归位（strict 定位：symlink 解析 + group_empty_dirs 合并目录，但不回溯祖先）；
   -- 若因 git is_tracked 异步未就绪而暂时定位不到，保留 pending 待后续 render_stable 归位
   Render.try_reveal_cursor(state)
 end
@@ -607,6 +607,10 @@ function M.reveal(opts)
   local file = opts.file or vim.api.nvim_buf_get_name(0)
   if file == '' or vim.fn.filereadable(file) == 0 and vim.fn.isdirectory(file) == 0 then
     if not M.is_open() then M.open() end
+    -- 无可定位的当前文件（scratch / [No Name]）→ 同样拉回根行，避免停在复用 buffer 的残留位置
+    if state and state.win and vim.api.nvim_win_is_valid(state.win) then
+      pcall(vim.api.nvim_win_set_cursor, state.win, { 1, 0 })
+    end
     M.focus()
     return
   end
@@ -616,13 +620,20 @@ function M.reveal(opts)
 
   state._skip_preview = true
   state._pending_reveal = file
+  local positioned = false
   if Actions.expand_to_file(state, file) then
     Render.render(state)
     -- 目标行已渲染则归位；若因 git is_tracked 异步未就绪、hidden+tracked 祖先暂被
     -- 过滤而定位不到，则保留 pending，待 git 完成的 render_stable 出现后归位
-    Render.try_reveal_cursor(state)
+    positioned = Render.try_reveal_cursor(state)
   else
     state._pending_reveal = nil
+  end
+  -- 目标当下不可见（隐藏/被过滤/不在树内，或 git 异步未就绪）：把光标拉回根行。
+  -- explorer buffer 跨 open/close 复用，不重置会停在上一次的残留位置（如之前 follow 跟到
+  -- 的别的文件），表现为「在 .git/config 上 reveal 却被带到 context.sh」
+  if not positioned and state.win and vim.api.nvim_win_is_valid(state.win) then
+    pcall(vim.api.nvim_win_set_cursor, state.win, { 1, 0 })
   end
   state._skip_preview = nil
   M.focus()

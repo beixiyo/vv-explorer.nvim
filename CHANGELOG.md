@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- **reveal 把光标跳到别处**：在被隐藏/过滤的文件（未跟踪 dotfile、gitignored、`.git/` 内文件）上按 `<leader>e` 时光标被带到别的文件。两处根因：① `find_row` 沿祖先回溯到最近可见目录行并强制定位 → 改 reveal/follow 用 strict 定位，只在目标文件**自身**那一行已渲染时归位（仍兼容 symlink 解析与 group_empty_dirs 合并目录），「hidden + git tracked」待 git 异步就绪后照常归位；② explorer buffer 跨 open/close 复用，定位失败时光标停在上一次的残留位置（如之前 follow 跟到的文件）→ 现 reveal 定位不到目标时把光标拉回根行
+
 - **git 状态不刷新（外部变更）**：commit/push 等只动 `.git/`（index/HEAD）的操作不会在工作树目录上产生 fs_event，导致 watch.lua 监听不到、git 状态标记滞留。现订阅 vv-git 的 `User VVGitStatusChanged` 即时刷新，并叠加 `FocusGained`/`TermClose`/`TermLeave` 兜底外部工具（ClaudeCode/Codex 等直接跑 git）的场景；detach 时清理对应 augroup
 
 ### Added
