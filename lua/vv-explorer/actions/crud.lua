@@ -8,6 +8,24 @@ local Trash = require('vv-explorer.trash')
 local Lsp = require('vv-explorer.lsp')
 local Loading = require('vv-utils.loading')
 
+-- 折叠空目录链「选段」高亮命名空间（C-h/C-l 选层时高亮选中前缀段）
+local CHAIN_NS = vim.api.nvim_create_namespace('vv-explorer.chain_sel')
+
+-- 从 tip 节点沿 .parent 上溯到折叠链第 idx 段对应的真实树节点（make_node 已可靠挂 .parent）。
+-- 供 create/delete/copy/cut/paste/rename 拿到「选中层级」的节点，而非永远最深的 tip
+---@param tip table
+---@param chain string[]
+---@param idx integer
+---@return table
+local function chain_node_at(tip, chain, idx)
+  local n = tip
+  for _ = 1, (#chain - idx) do
+    if not n.parent then break end
+    n = n.parent
+  end
+  return n
+end
+
 local L = {}
 
 ---@param M table
@@ -32,10 +50,32 @@ function L.attach(M, H)
     return {}
   end
 
+  -- 光标行的「有效操作目标节点」：
+  --   * 折叠链行（group_chain>1）→ 按 C-h/C-l 选中的层级节点（未选=最深 tip，等同原行为）
+  --   * 普通行 → 本行节点
+  -- create/delete/copy/cut/paste/rename 统一走它，让选段高亮贯穿所有单目标操作；
+  -- 导航（open/close）不走它，仍作用于显示行(tip)
+  ---@param state table
+  ---@return table?
+  local function target_node(state)
+    local node = H.node_under_cursor(state)
+    if not node then return nil end
+    local row = H.row_under_cursor(state)
+    if not row or not row.group_chain or #row.group_chain <= 1 then return node end
+    local sel = state._chain_sel
+    local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+    local idx = (sel and sel.lnum == lnum) and sel.idx or #row.group_chain
+    return chain_node_at(node, row.group_chain, idx)
+  end
+
   ---@param state table
   local function after_fs_change(state)
     Tree.refresh(state.root)
     state.selection = {}
+    state._chain_sel = nil
+    if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+      vim.api.nvim_buf_clear_namespace(state.buf, CHAIN_NS, 0, -1)
+    end
     H.invalidate_filter_index(state)
     if state.git and state.git.refresh then state.git.refresh() end
     Render.render(state)
@@ -86,10 +126,30 @@ function L.attach(M, H)
     H.ensure_state_fields(state)
     local node = H.node_under_cursor(state)
     local base = dir_context(state, node)
+    local default = ''
+
+    -- 折叠空目录链（如 test/n1/n2 合并成一行）：把创建基准下移到链顶的父目录，链作为可编辑
+    -- 默认值预填。预填长度跟随 C-h/C-l 选中层级（选 n1 → 预填 test/n1/，无需再退格）；
+    -- 未选则预填整条链（用户可自行退格选层）
+    local row = H.row_under_cursor(state)
+    if node and node.is_dir and row and row.group_chain and #row.group_chain > 1 then
+      local chain = row.group_chain
+      local parent = node.path
+      for _ = 1, #chain do parent = vim.fs.dirname(parent) end
+      base = parent
+
+      local sel = state._chain_sel
+      local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+      local idx = (sel and sel.lnum == lnum) and sel.idx or #chain
+      local segs = {}
+      for i = 1, idx do segs[i] = chain[i] end
+      default = table.concat(segs, '/') .. '/'
+    end
+
     local rel_prompt = vim.fn.fnamemodify(base, ':.')
     if rel_prompt == '' then rel_prompt = '.' end
 
-    vim.ui.input({ prompt = 'New (' .. rel_prompt .. '/): ', default = '', completion = 'file' }, function(name)
+    vim.ui.input({ prompt = 'New (' .. rel_prompt .. '/): ', default = default, completion = 'file' }, function(name)
       if not name or name == '' then return end
       local is_dir = name:sub(-1) == '/'
       local rel = name:gsub('/$', '')
@@ -112,10 +172,52 @@ function L.attach(M, H)
     end)
   end
 
+  -- 折叠链选段：C-h/C-l 调整选中层级，高亮选中前缀段，d 时据此精确删除
+  ---@param state table
+  ---@param delta integer  +1 往深、-1 往浅
+  local function chain_select(state, delta)
+    if not vim.api.nvim_win_is_valid(state.win) then return end
+    local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+    local row = H.row_at_line(state, lnum)
+    if not row or not row.group_chain or #row.group_chain <= 1 then return end
+
+    local n = #row.group_chain
+    local sel = state._chain_sel
+    if not sel or sel.lnum ~= lnum then sel = { lnum = lnum, idx = n } end
+    sel.idx = math.min(n, math.max(1, sel.idx + delta))
+    state._chain_sel = sel
+
+    -- 高亮选中前缀段：name 起始列 → 第 idx 段结束的字节偏移
+    vim.api.nvim_buf_clear_namespace(state.buf, CHAIN_NS, 0, -1)
+    local name_col = (state.name_cols and state.name_cols[lnum]) or 0
+    local off = 0
+    for i = 1, sel.idx do
+      off = off + #row.group_chain[i]
+      if i < sel.idx then off = off + 1 end
+    end
+    pcall(vim.api.nvim_buf_set_extmark, state.buf, CHAIN_NS, lnum - 1, name_col, {
+      end_col = name_col + off,
+      hl_group = 'VVExplorerMatch',
+      priority = 200,
+    })
+  end
+
+  function M.chain_select_deeper(state) chain_select(state, 1) end
+  function M.chain_select_shallower(state) chain_select(state, -1) end
+
+  ---@param state table
+  function M.chain_sel_clear(state)
+    if not state._chain_sel then return end
+    state._chain_sel = nil
+    if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+      vim.api.nvim_buf_clear_namespace(state.buf, CHAIN_NS, 0, -1)
+    end
+  end
+
   function M.delete(state)
     H.ensure_state_fields(state)
-    local node = H.node_under_cursor(state)
-    local paths = targets(state, node)
+    -- target_node 已处理折叠链选段（无多选时取选中层级）；多选仍由 targets 优先
+    local paths = targets(state, target_node(state))
     if #paths == 0 then return end
 
     local use_trash = Trash.enabled()
@@ -169,7 +271,8 @@ function L.attach(M, H)
 
   function M.rename(state)
     H.ensure_state_fields(state)
-    local node = H.node_under_cursor(state)
+    -- 折叠链行：重命名选中层级节点（未选=最深 tip），node.name/parent 取自真实节点
+    local node = target_node(state)
     if not node or node == state.root then return end
     local old = node.path
 
@@ -224,7 +327,8 @@ function L.attach(M, H)
 
   local function clipboard_mark(state, mode)
     H.ensure_state_fields(state)
-    local node = H.node_under_cursor(state)
+    -- 折叠链行：复制/剪切选中层级节点（未选=最深 tip）
+    local node = target_node(state)
     local sel = H.selected_paths(state)
 
     if #sel > 0 then
@@ -267,8 +371,8 @@ function L.attach(M, H)
       vim.notify('vv-explorer: clipboard empty', vim.log.levels.WARN)
       return
     end
-    local node = H.node_under_cursor(state)
-    local dest_dir = dir_context(state, node)
+    -- 折叠链行：粘贴进选中层级目录（未选=最深 tip）
+    local dest_dir = dir_context(state, target_node(state))
     local mode = state.clipboard.mode
     local last_dst
 

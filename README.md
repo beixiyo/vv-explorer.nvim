@@ -13,14 +13,15 @@
 
 ## 为什么要这个插件
 
-| | neo-tree / nvim-tree | vv-explorer |
-|---|---|---|
-| **实时预览** | 需要额外配置或不支持 | `j`/`k` 移动即时切换文件预览，`<CR>` 固定 |
-| **过滤体验** | 无 / 基础 | fd 异步索引 + 三模式（fuzzy / glob / regex）+ 逐字高亮 + 祖先链保持 |
-| **空目录折叠** | neo-tree 支持 | 支持，`a/b/c/` 单链合并显示 |
-| **回收站** | 依赖额外插件 | 内置，支持恢复、大小警告、面板 UI |
-| **依赖** | plenary / nui | 零第三方依赖，仅需 `vv-utils.nvim`（共享库） |
-| **多 source** | buffers / git_status / ... | 只做文件树，全 repo picker 交给 Telescope / fzf |
+| | neo-tree / nvim-tree | snacks.explorer | vv-explorer |
+|---|---|---|---|
+| **打开方式** | 双击打开（默认）| 双击打开 | **单击**即展开 / 进入目录，符合直觉（文件仍走键盘 `<CR>` / `l`） |
+| **实时预览** | 需额外配置或不支持 | 底部小窗预览，过小难看清 | `j`/`k` 移动即时切换文件防抖预览，`<CR>` 固定 |
+| **过滤体验** | 无 / 基础 | picker 模糊匹配 | fd 异步索引 + 三模式（fuzzy / glob / regex）+ 逐字高亮 + 祖先链保持 |
+| **空目录折叠** | neo-tree 支持 | — | 支持，`a/b/c/` 单链合并显示 |
+| **回收站** | 依赖额外插件 | 系统回收站（`trash=true`，无面板 / 恢复 UI）| 内置面板：恢复、大小警告、浏览 UI |
+| **打包方式** | 独立插件 + plenary / nui | 全家桶：与 dashboard / picker / notifier 等**同仓打包**，装一个带一堆 | 拆成独立小插件（vv-explorer / vv-utils / vv-icons），按需装、零第三方依赖 |
+| **多 source** | buffers / git_status / ... | picker 多源（本就是 picker） | 只做文件树，全 repo picker 交给 Telescope / fzf |
 
 ## 安装
 
@@ -50,7 +51,7 @@ opts = {
   width = 32,                  -- 窗口宽度
   hidden = false,              -- 显示 dotfile（'.' 键切换）
   group_empty_dirs = true,     -- 单链目录合并
-  preview = true,              -- VSCode 风单击预览
+  preview = true,              -- 不打开自动预览
   watch = true,                -- libuv fs_event 自动刷新
   select_move_down = true,     -- Tab 多选后自动将光标下移一行
   cwd = nil,                   -- 根目录（nil = vim.fn.getcwd()）
@@ -189,10 +190,12 @@ icon_rules = {
 
 | 键 | 动作 | 说明 |
 |----|------|------|
-| `<CR>` / `l` | `open` | 打开文件 / 切换目录展开 |
+| `<CR>` / `l` / `→` | `open` | 打开文件 / 切换目录展开（`→` 同 `l`） |
+| `↑` / `↓` | 移动 | 等同 `k` / `j`（上下，含首尾绕回） |
 | 单击 | 展开/收起目录 | 文件不动，走预览 |
 | 右键 | `yank_abs_path` | 复制绝对路径到剪贴板 |
-| `h` | `close_node` | 关闭目录 / 跳到父目录 |
+| `h` / `←` | `close_node` | 关闭目录 / 跳到父目录（`←` 同 `h`） |
+| `<C-l>` / `<C-h>` | 折叠链选段 | 折叠空目录链行上往深 / 往浅选中目标层级（见下方「折叠空目录链选段」） |
 | `]` | `cd_to` | 进入：把光标目录设为根 |
 | `[` | `cd_up` | 返回上级 |
 | `/` | `start_filter` | 打开过滤提示框 |
@@ -217,6 +220,20 @@ icon_rules = {
 | `T` | `trash_panel` | 打开回收站面板 |
 | `<C-e>` / `<C-y>` | 滚动预览 | 滚动主窗口预览 |
 | `g?` | `help` | 键位帮助浮窗 |
+
+### 折叠空目录链选段（chain segment）
+
+`group_empty_dirs = true` 时单链空目录（如 `test/n1/n2`）合并成一行，操作默认作用于**最深段**。用 `<C-l>` / `<C-h>` 往深 / 往浅选中某一层（高亮显示），之后 `a` / `d` / `r` / `y` / `x` / `p` 都作用于**所选层级**：
+
+```
+test/n1/n2   ← 默认（最深段）
+test/n1      ← <C-h> 一次
+test         ← 再一次
+```
+
+- 未选时 = 最深段（同原行为）；`a` 创建预填到所选层级，不用退格；光标离开该行自动复位
+- 导航 `l` / `h` / `<CR>` / `←` / `→` 始终作用整行，不受选段影响
+- 部分终端 `<C-h>` 被当 `<BS>`、往浅失效，属终端限制，可改用 `<C-l>`
 
 ### 拖拽落点（drag-and-drop）
 

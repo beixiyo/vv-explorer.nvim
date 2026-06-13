@@ -159,6 +159,12 @@ local defaults = {
       Actions.yank_abs_path(s)
     end,
     ['h']     = 'close_node',
+    -- 方向键：与 hjkl 同义（↑↓ 见 apply_wrap_movement，←→ 在此）
+    ['<Right>'] = 'open',          -- → 进入文件 / 展开目录（= l）
+    ['<Left>']  = 'close_node',    -- ← 收起目录 / 回父级（= h）
+    -- 折叠空目录链选层：C-h 往浅、C-l 往深，配合 d 精确删除某一层
+    ['<C-l>'] = 'chain_select_deeper',
+    ['<C-h>'] = 'chain_select_shallower',
     ['.']     = 'toggle_hidden',   -- yazi 风：dotfile 显隐
     ['<M-.>'] = 'toggle_hidden',
     ['I']     = 'toggle_gitignored', -- gitignored 显隐（Phase 2 生效）
@@ -207,6 +213,10 @@ local function setup_cursor_snap(s)
       if target_col and cursor[2] ~= target_col then
         vim.api.nvim_win_set_cursor(s.win, { cursor[1], target_col })
       end
+      -- 光标离开折叠链选段所在行 → 清掉选段高亮与状态
+      if s._chain_sel and s._chain_sel.lnum ~= cursor[1] then
+        Actions.chain_sel_clear(s)
+      end
     end,
   })
 end
@@ -252,6 +262,11 @@ local function apply_wrap_movement(s)
   vim.keymap.set('n', 'j', function() move(1) end,
     { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: next (wrap)' })
   vim.keymap.set('n', 'k', function() move(-1) end,
+    { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: prev (wrap)' })
+  -- 方向键 ↑↓ 与 j/k 同义（同样首尾绕回）
+  vim.keymap.set('n', '<Down>', function() move(1) end,
+    { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: next (wrap)' })
+  vim.keymap.set('n', '<Up>', function() move(-1) end,
     { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: prev (wrap)' })
 end
 

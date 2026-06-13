@@ -13,6 +13,8 @@
 
 ### Added
 
+- **方向键导航**：`↑/↓` 同 `j`/`k`（上/下，含首尾绕回）、`→` 同 `l`（进入文件/展开目录）、`←` 同 `h`（收起/回父级），照顾习惯方向键的用户
+- **折叠空目录链选层操作**：被 `group_empty_dirs` 合并成一行的链（如 `test/n1/n2`）上，`C-l`/`C-h` 往深/往浅选层并高亮选中前缀段，选段会**贯穿所有单目标操作**——`d` 删除、`a` 创建...
 - **LSP 文件重命名**：rename（`r`）时自动通知 LSP 服务端。流程：向支持 `workspace/willRenameFiles` 的客户端发异步请求 → apply 返回的 workspace edits（如更新 import 路径）→ 执行磁盘重命名 → 发 `workspace/didRenameFiles` 通知。无支持客户端时零开销直接重命名。等待期间在树行末尾显示 loading 动画（来自 `vv-utils.loading`），同时跳过该行 git/诊断图标渲染。`lsp_rename_timeout_ms`（默认 5000ms）可配，超时后英文 warn 并继续执行重命名。LSP 协议层独立于 `lua/vv-explorer/lsp.lua`
 
 - **`X` 执行文件**：按文件类型（shebang / 扩展名优先级）解析运行器并在终端执行；执行前默认弹确认框显示命令（`execute.confirm` 可关），运行器可配（`execute.run`，默认原生分屏终端）；命令解析复用 `vv-utils.exec`

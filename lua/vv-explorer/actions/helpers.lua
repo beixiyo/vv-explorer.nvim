@@ -216,6 +216,28 @@ function H.node_under_cursor(state)
   return H.node_at_line(state, lnum)
 end
 
+-- 把 buffer 行号映射到 flatten 行（含 group_chain / display_name，供折叠链选层用）。
+-- 行↔row 偏移与 node_at_line 对齐：过滤模式 rows 从行 1 起，普通模式行 1 为 root、rows 从行 2 起
+---@param state table
+---@param lnum integer  1-based buffer 行号
+---@return table?
+function H.row_at_line(state, lnum)
+  local f = state.filter
+  if f and f.active and (f.query or '') ~= '' then
+    return state.rows and state.rows[lnum]
+  end
+  if lnum == 1 then return nil end
+  return state.rows and state.rows[lnum - 1]
+end
+
+---@param state table
+---@return table?
+function H.row_under_cursor(state)
+  if not vim.api.nvim_win_is_valid(state.win) then return nil end
+  local lnum = vim.api.nvim_win_get_cursor(state.win)[1]
+  return H.row_at_line(state, lnum)
+end
+
 -- 在 explorer 窗内执行 split-like 命令打开 path，并把新窗口 chrome 拉回全局默认
 ---@param state table
 ---@param cmd string
