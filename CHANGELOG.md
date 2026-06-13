@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **回收站孤儿条目 crash**：trash 目录里若存在「数据文件在、配套 `.meta.json` 丢失」的孤儿条目（早先 `trash()` 中 rename 成功但 meta 写入失败被 pcall 吞、或 meta 被外部清理所致），`Trash.list()` 直接 `Fs.read_all` 该 meta → ENOENT error，连带 `enforce_max_items` 在每次删除后崩（`vim.schedule callback` 报错）。现把 meta 读取包 `pcall`，缺 meta 时按 `original_path='(unknown)'` 兜底列出，单个孤儿不再打挂整个 list/删除流程
 - **树窗按 `gf` 报 E1513**：树 buffer `winfixbuf=true`，原生 `gf` 试图在锁定窗口切 buffer → `E1513: Cannot switch buffer`。现默认把 `gf` 映射为 `open`，与 `<CR>`/`l` 一致（打开节点 / 展开目录），走已处理 winfixbuf 的 `open_file` 路径
 
 - **reveal 把光标跳到别处**：在被隐藏/过滤的文件（未跟踪 dotfile、gitignored、`.git/` 内文件）上按 `<leader>e` 时光标被带到别的文件。两处根因：① `find_row` 沿祖先回溯到最近可见目录行并强制定位 → 改 reveal/follow 用 strict 定位，只在目标文件**自身**那一行已渲染时归位（仍兼容 symlink 解析与 group_empty_dirs 合并目录），「hidden + git tracked」待 git 异步就绪后照常归位；② explorer buffer 跨 open/close 复用，定位失败时光标停在上一次的残留位置（如之前 follow 跟到的文件）→ 现 reveal 定位不到目标时把光标拉回根行

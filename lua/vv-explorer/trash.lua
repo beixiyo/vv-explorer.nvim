@@ -135,8 +135,11 @@ function M.list()
     local meta_path = trash_path .. '.meta.json'
     local meta = {}
 
-    local raw = Fs.read_all(meta_path)
-    if raw and raw ~= '' then
+    -- meta 可能缺失（孤儿数据文件：trash() 中 rename 成功但 write_all meta 失败被 pcall 吞、
+    -- 或 meta 被外部清理）。Fs.read_all 遇 ENOENT 会 error，故包 pcall——缺 meta 时按未知元数据
+    -- 兜底列出（original_path='(unknown)'），绝不让单个孤儿 crash 整个 list/enforce_max_items
+    local ok_read, raw = pcall(Fs.read_all, meta_path)
+    if ok_read and raw and raw ~= '' then
       local ok, parsed = pcall(vim.json.decode, raw)
       if ok then meta = parsed end
     end
