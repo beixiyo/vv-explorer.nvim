@@ -190,11 +190,13 @@ function M.expand_to(root, target_path)
   target_path = norm(target_path)
   -- 真正的前缀判断：string.find(plain) 是「任意位置子串匹配」，会把路径里碰巧
   -- 内嵌了 root.path 的无关文件（如 /tmp<root.path>/x）误判为后代，导致 rel 错位
-  if target_path ~= root.path and target_path:sub(1, #root.path + 1) ~= root.path .. '/' then
+  -- root 为文件系统根 '/' 时不能再补尾斜杠（否则前缀变 '//'，任何后代都判失败）
+  local prefix = root.path == '/' and '/' or (root.path .. '/')
+  if target_path ~= root.path and target_path:sub(1, #prefix) ~= prefix then
     return false
   end
   if target_path == root.path then return true end
-  local rel = target_path:sub(#root.path + 2)
+  local rel = target_path:sub(#prefix + 1)
   local parts = vim.split(rel, '/', { plain = true })
   local node = root
   for i, part in ipairs(parts) do
@@ -213,8 +215,10 @@ end
 function M.find(root, path)
   path = norm(path)
   if path == root.path then return root end
-  if path:sub(1, #root.path + 1) ~= root.path .. '/' then return nil end
-  local rel = path:sub(#root.path + 2)
+  -- root 为 '/' 时折叠尾斜杠，否则前缀变 '//'，所有后代都误判不在 root 下
+  local prefix = root.path == '/' and '/' or (root.path .. '/')
+  if path:sub(1, #prefix) ~= prefix then return nil end
+  local rel = path:sub(#prefix + 1)
   local node = root
   for _, part in ipairs(vim.split(rel, '/', { plain = true })) do
     if not node.children then return nil end

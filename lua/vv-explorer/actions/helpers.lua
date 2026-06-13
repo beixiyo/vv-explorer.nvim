@@ -24,12 +24,19 @@ function H.to_tree_path(state, file)
   local file_real = Fs.realpath(file)
   local root_real = Fs.realpath(root.path)
 
+  -- 前缀判断：base 为 '/' 时折叠尾斜杠，否则前缀变 '//'，任何后代都误判不在 root 下
+  local function under(base, p)
+    if p == base then return true end
+    local pre = base == '/' and '/' or (base .. '/')
+    return p:sub(1, #pre) == pre
+  end
+
   -- 已在 root 之下（普通路径）→ 直接用规范化形，走 expand_to 原逻辑
   local norm = vim.fs.normalize(file)
-  if norm == root.path or norm:sub(1, #root.path + 1) == root.path .. '/' then
+  if under(root.path, norm) then
     return norm
   end
-  if file_real == root_real or file_real:sub(1, #root_real + 1) == root_real .. '/' then
+  if under(root_real, file_real) then
     -- 真实路径在 root 之下：用真实路径（expand_to 会自行 normalize）
     return file_real
   end
@@ -39,7 +46,7 @@ function H.to_tree_path(state, file)
   local function visit(node)
     if not node.is_dir then return end
     local nr = Fs.realpath(node.path)
-    if nr == file_real or file_real:sub(1, #nr + 1) == nr .. '/' then
+    if under(nr, file_real) then
       -- 选最长前缀（最深匹配），拼接剩余段后构造树内路径
       if not best or #Fs.realpath(best.path) < #nr then best = node end
     end
@@ -155,6 +162,8 @@ function H.invalidate_filter_index(state)
   f.index_root = nil
   f.is_dir_map = nil
   f.index_building = false
+  -- bump generation：放弃任何在途异步构建，使其回调命中 stale 检查后被丢弃
+  f.index_gen = (f.index_gen or 0) + 1
 end
 
 ---@param path string

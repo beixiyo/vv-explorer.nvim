@@ -5,6 +5,7 @@ local Render = require('vv-explorer.render')
 local Preview = require('vv-explorer.preview')
 local Trash = require('vv-explorer.trash')
 local Editor = require('vv-utils.editor')
+local Fs = require('vv-utils.fs')
 
 local L = {}
 
@@ -40,7 +41,10 @@ function L.attach(M, H)
     vim.api.nvim_set_current_win(main)
     local prev_buf = vim.api.nvim_get_current_buf()
     local cur = vim.api.nvim_buf_get_name(0)
-    if cur ~= vim.fn.fnamemodify(node.path, ':p') then
+    -- 经符号链接打开的文件 buffer 名是 realpath 解析形，而 fnamemodify(':p') 不解析
+    -- 链接，直接字符串比对会误判「未打开」并重跑 :edit（脏 buffer 触发 E37）
+    -- 两侧统一到 realpath 空间，与本仓库其余 symlink 等价判断（Fs.realpath）一致
+    if Fs.realpath(cur) ~= Fs.realpath(node.path) then
       vim.cmd('edit ' .. vim.fn.fnameescape(node.path))
       require('vv-utils.bufdelete').wipe_if_throwaway(prev_buf)
     end
@@ -173,7 +177,7 @@ function L.attach(M, H)
     if not node or not node.is_dir then return end
     state.root = Tree.new_root(node.path)
     -- 切根即时失效旧索引（与 after_fs_change 约定一致）；ensure_filter_index 的
-    -- root-stamp 校验是兜底，两者并存确保任何改根路径都不会复用旧 root 的索引。
+    -- root-stamp 校验是兜底，两者并存确保任何改根路径都不会复用旧 root 的索引
     H.invalidate_filter_index(state)
     Render.render(state)
   end

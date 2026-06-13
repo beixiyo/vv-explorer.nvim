@@ -11,6 +11,18 @@
 
 - **git 状态不刷新（外部变更）**：commit/push 等只动 `.git/`（index/HEAD）的操作不会在工作树目录上产生 fs_event，导致 watch.lua 监听不到、git 状态标记滞留。现订阅 vv-git 的 `User VVGitStatusChanged` 即时刷新，并叠加 `FocusGained`/`TermClose`/`TermLeave` 兜底外部工具（ClaudeCode/Codex 等直接跑 git）的场景；detach 时清理对应 augroup
 
+- **filter 索引被陈旧异步构建污染**：大仓 `ensure_filter_index` 异步 `build_index`（git ls-files）的回调无 root/generation 校验，慢构建在切根（cd_to/cd_up）后才返回时会把旧 root 绝对路径写进新 root 的 `f.index` 并触发错误 refilter（匹配重建成新 root 下不存在的路径）。现为每次构建打 generation token，`invalidate_filter_index` 一并 bump，回调命中 stale 检查（gen 或 index_root 不符）即丢弃结果，并重置 `index_rels` 强制按当前 root 重建
+
+- **粘贴全失败仍清空剪贴板**：`paste` 在全部条目被自包含跳过（把目录粘进自身/子目录）或全部出错时仍无条件清 `state.clipboard`，导致没粘成功却丢了 cut/copy 选区（cut 的源无法从 explorer 恢复）。现仅在确有条目落盘成功（`last_dst` 非 nil）时才清剪贴板，与 `drop_into` 的非破坏性行为一致
+
+- **root 为 `/` 时无法展开/定位**：`Tree.expand_to`/`Tree.find` 及 `to_tree_path` 的前缀判断用 `root.path .. '/'`，当 root 是文件系统根 `/` 时前缀退化成 `//`，任何真实后代都被误判不在 root 下 → reveal/follow_file/拖拽落目录/filter open-in-tree 全部静默失效、光标退回根行。现 base 为 `/` 时折叠尾斜杠（前缀取 `/`），后代正常解析且兄弟拒绝（`/home/dev` vs `/home/devil`）仍成立
+
+- **恢复孤儿回收站条目移到 `(unknown)` 垃圾路径**：缺 meta 的孤儿条目 `original_path` 为 `(unknown)` 哨兵，`Trash.restore` 无校验直接 rename，把文件挪到 cwd 下名为 `(unknown)` 的文件、数据静默丢失。现 `restore` 在动磁盘前拦截哨兵/非绝对路径并 `error`，面板 `r`/`<CR>` 用 `pcall` 包裹并以 WARN 通知失败原因而非搬运文件
+
+- **经符号链接打开的文件重复 :edit 报 E37**：`open_file` 用 `fnamemodify(':p')`（不解析 symlink）与 buffer 名（realpath 解析形）比对，符号链接目录下的文件被误判「未打开」而重跑无 `!` 的 `:edit`，脏 buffer 时抛 `E37: No write since last change`。现两侧统一到 `Fs.realpath` 空间比对，与本仓库其余 symlink 等价判断一致，已打开文件成为真正的 no-op
+
+- **外部删除焦点文件后光标停在无关行**：`render_stable` 在 `prev_path` 重渲后不在 `path_to_row` 时（外部 rm 焦点文件）不移动光标，nvim 自动 clamp 使其落在变成别的文件的同一行号上，后续 `<CR>`/`d`/`Y` 误操作邻近节点。现复用 `find_row` 的祖先回溯惯用法，回溯到最近存在祖先（被删文件的父目录）落点
+
 ### Added
 
 - **方向键导航**：`↑/↓` 同 `j`/`k`（上/下，含首尾绕回）、`→` 同 `l`（进入文件/展开目录）、`←` 同 `h`（收起/回父级），照顾习惯方向键的用户

@@ -141,27 +141,42 @@ function L.attach(M, H)
     local f = state.filter
     -- 根失效（root-stamp）：索引/rels 是为某个具体 root 建的全树绝对路径，切根后
     -- （cd_to/cd_up 或任何未来改 state.root 的路径）旧索引不再适用。这里统一在
-    -- 真正复用旧索引「之前」校验，发现 root 漂移就先失效再重建，使所有改根入口自动正确。
+    -- 真正复用旧索引「之前」校验，发现 root 漂移就先失效再重建，使所有改根入口自动正确
     if (f.index or f.index_building) and f.index_root ~= state.root.path then
       H.invalidate_filter_index(state)
     end
+
     if f.index or f.index_building then return true end
+
     f.index_building = true
     f.index_root = state.root.path
+    -- 用 generation token 标记本次构建：build_index 是异步的（vim.system/git ls-files），
+    -- 慢构建可能在切根后才回调，把旧 root 的绝对路径写进新 root 的 f.index 并触发错误
+    -- refilter。任何 invalidate_filter_index 都会 bump f.index_gen，使在途旧构建被丢弃
+    f.index_gen = (f.index_gen or 0) + 1
+
+    local my_gen = f.index_gen
     local ok = Filter.build_index(state.root.path, {
       hidden = state.opts.hidden,
       show_ignored = state.opts.git and state.opts.git.show_ignored,
       custom = state.opts.filter and state.opts.filter.custom,
     }, function(paths, is_dir_map)
+      -- 更新的构建/根已取代本次回调 → 丢弃陈旧结果，绝不污染当前 root 的索引
+      if not state.filter or state.filter ~= f or f.index_gen ~= my_gen then return end
+      if f.index_root ~= state.root.path then return end
+
       f.index = paths
       f.is_dir_map = is_dir_map
+      f.index_rels = nil
       f.index_building = false
-      if state.filter and state.filter.active then refilter(state) end
+
+      if f.active then refilter(state) end
     end)
     if not ok then
       f.index_building = false
       f.index_root = nil
       M.clear_filter(state)
+
       return false
     end
     return true
@@ -187,9 +202,11 @@ function L.attach(M, H)
 
   function M.clear_filter(state)
     if not state.filter or not state.filter.active then return end
+
     state.filter.active = false
     state.filter.query = ''
     state.filter.matched = H.EMPTY_MATCHED
+
     Render.render(state)
   end
 end

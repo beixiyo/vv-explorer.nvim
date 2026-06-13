@@ -402,7 +402,9 @@ function L.attach(M, H)
     if #failed > 0 then
       vim.notify('vv-explorer: paste errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
     end
-    state.clipboard = nil
+    -- 仅在确有条目粘贴成功时清剪贴板：若全部被自包含跳过或全部出错（last_dst 为 nil），
+    -- 保留 cut/copy 选区，避免用户白丢标记的源（cut 时尤其无法从 explorer 恢复）
+    if last_dst then state.clipboard = nil end
     after_fs_change(state)
     if last_dst then
       Tree.expand_to(state.root, last_dst)

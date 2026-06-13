@@ -164,6 +164,11 @@ end
 ---@return string restored_path
 function M.restore(entry)
   local dest = entry.original_path
+  -- 孤儿条目（meta 缺失）original_path 为 '(unknown)' 哨兵或非绝对路径，
+  -- 若不拦截会 rename 到 cwd 下名为 '(unknown)' 的垃圾文件，数据静默丢失
+  if not dest or dest == '(unknown)' or not vim.startswith(vim.fs.normalize(dest), '/') then
+    error('cannot restore: original path unknown (orphan trash entry, missing meta)')
+  end
   Fs.mkdir_p(vim.fs.dirname(dest))
   if Fs.exists(dest) then dest = Fs.unique_dest(dest) end
   Fs.rename(entry.trash_path, dest)
@@ -350,21 +355,21 @@ function M.open_panel(state)
   vim.keymap.set('n', 'q', close, vim.tbl_extend('force', map_opts, { desc = 'vv-explorer: close trash' }))
   vim.keymap.set('n', '<Esc>', close, vim.tbl_extend('force', map_opts, { desc = 'vv-explorer: close trash' }))
 
-  vim.keymap.set('n', 'r', function()
+  local function do_restore()
     local e = get_entry()
     if not e then return end
-    local dest = M.restore(e)
+    local ok, dest = pcall(M.restore, e)
+    if not ok then
+      vim.notify(tostring(dest), vim.log.levels.WARN)
+      return
+    end
     vim.notify('Restored: ' .. vim.fn.fnamemodify(dest, ':.'))
     refresh()
-  end, vim.tbl_extend('force', map_opts, { desc = 'vv-explorer: restore from trash' }))
+  end
 
-  vim.keymap.set('n', '<CR>', function()
-    local e = get_entry()
-    if not e then return end
-    local dest = M.restore(e)
-    vim.notify('Restored: ' .. vim.fn.fnamemodify(dest, ':.'))
-    refresh()
-  end, vim.tbl_extend('force', map_opts, { desc = 'vv-explorer: restore from trash' }))
+  vim.keymap.set('n', 'r', do_restore, vim.tbl_extend('force', map_opts, { desc = 'vv-explorer: restore from trash' }))
+
+  vim.keymap.set('n', '<CR>', do_restore, vim.tbl_extend('force', map_opts, { desc = 'vv-explorer: restore from trash' }))
 
   vim.keymap.set('n', 'd', function()
     local e = get_entry()

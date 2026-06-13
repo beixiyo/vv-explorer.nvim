@@ -309,6 +309,16 @@ function M.render_stable(state)
   -- 一旦出现就归位；两者意图不同时以用户的 reveal 意图为准
   if not M.try_reveal_cursor(state) and prev_path and state.path_to_row then
     local new_lnum = state.path_to_row[prev_path]
+    if not new_lnum then
+      -- 焦点节点已消失（外部删除等）：回溯到最近的存在祖先，避免光标静默落在无关行上
+      local p = prev_path
+      while not new_lnum and p and p ~= '' do
+        local parent = vim.fs.dirname(p)
+        if parent == p then break end
+        p = parent
+        new_lnum = state.path_to_row[p]
+      end
+    end
     if new_lnum then
       pcall(vim.api.nvim_win_set_cursor, state.win, { new_lnum, 0 })
     end
