@@ -1,345 +1,88 @@
--- 底部浮动输入框（双行）+ 实时过滤（debounced）
+-- vv-explorer.prompt — 底部过滤输入框
 --
--- 两行布局（buffer 实际有 2 行，避开 floating window 里 virt_lines_above 不稳定的坑）：
---   line 0 = 空字符串，用 extmark overlay 画 label：mode badge + <S-Tab> 提示 + 状态
---   line 1 = 用户输入；空时 overlay 显示 placeholder（第一字符即覆盖）
---
--- 光标锁在 line 1：CursorMoved/CursorMovedI 无差别兜底拉回（覆盖键盘 / 鼠标 / <C-o>gg
--- 等所有离开方式，比 keymap nop 黑名单更稳）。
--- input 行干净：没有 inline 前缀占位，输入再长都不会被装饰挤掉。
---
--- 增强键位（i / n 模式都生效）：
---   <S-Tab>        循环切换搜索模式（fuzzy → glob → regex）
---   <C-n> / <C-p>  在 tree 窗口里跳到下/上一个 match（焦点不离开 prompt）
---   <C-x> / <C-v>  以 split / vsplit 直接打开当前 match
+-- 骨架已下沉到 vv-utils.prompt（与 vv-flow 共用同一套双行浮窗 + 光标锁 + 防抖 +
+-- mode badge + spinner + close 句柄）。本文件只做 vv-explorer 特有的适配：
+--   · state.win → anchor_win
+--   · on_submit（explorer 命名） → on_accept（prompt 统一命名）
+--   · mode badge 显示走 Filter.display（fuzzy/glob/regex）
+--   · 状态文案 N matches / showing X of Y 从 state.filter 读
+--   · 自适应防抖：索引规模大时按 count/100 放大 wait（小目录恒 30ms）
+--   · spinner 从「反向读 state.filter.searching」改为「push 模型」——
+--     输入即 set_busy(true,'searching…')，indexing 由 actions 在构建期间 set_busy
 
+local Prompt = require('vv-utils.prompt')
 local Filter = require('vv-explorer.filter')
-
-local PROMPT_HEIGHT = 2
-local LABEL_ROW = 0 -- 0-indexed
-local INPUT_ROW = 1
-local INPUT_LNUM = INPUT_ROW + 1 -- nvim_win_set_cursor 是 1-indexed
 
 local M = {}
 
-local SPINNER_FRAMES = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
-
----@class VVExplorerPromptOpts
----@field initial? string
----@field on_change fun(query:string)
----@field on_submit fun(query:string)
----@field on_cancel fun()
----@field on_cycle_mode? fun():string
----@field on_navigate? fun(dir:integer)
----@field on_open_in? fun(kind:'split'|'vsplit')
----@field get_mode? fun():string
-
--- 创建浮窗 buffer + window，贴在 tree 窗口底部 PROMPT_HEIGHT 行
+-- 自适应防抖 ms：索引 < threshold 用 30ms；否则 min(max_ms, floor(count/100))
 ---@param state table
----@param initial string
----@return integer? buf, integer? win   tree_win 失效时返回 nil
-local function setup_floating_window(state, initial)
-  local tree_win = state.win
-  if not vim.api.nvim_win_is_valid(tree_win) then return nil, nil end
-
-  local tree_pos = vim.api.nvim_win_get_position(tree_win)
-  local tree_width = vim.api.nvim_win_get_width(tree_win)
-  local tree_height = vim.api.nvim_win_get_height(tree_win)
-
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = 'nofile'
-  vim.bo[buf].bufhidden = 'wipe'
-  -- 两行 buffer：line 0 占位给 label overlay；line 1 是用户输入
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { '', initial })
-
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = 'editor',
-    row = tree_pos[1] + tree_height - PROMPT_HEIGHT,
-    col = tree_pos[2],
-    width = tree_width,
-    height = PROMPT_HEIGHT,
-    style = 'minimal',
-    border = 'none',
-    focusable = true,
-    zindex = 50,
-  })
-
-  local api = vim.api
-  api.nvim_set_option_value('winhighlight', 'Normal:NormalFloat', { win = win, scope = 'local' })
-  api.nvim_set_option_value('signcolumn', 'no', { win = win, scope = 'local' })
-  api.nvim_set_option_value('number', false, { win = win, scope = 'local' })
-  api.nvim_set_option_value('cursorline', false, { win = win, scope = 'local' })
-  return buf, win
-end
-
--- 装饰：label（mode badge + <S-Tab> 提示 + 状态）overlay 在 line 0；placeholder overlay 在 line 1
--- 返回 redraw() 函数，调用方在 mode 切换 / 状态变化时调它
----@param buf integer
----@param state table
----@param opts VVExplorerPromptOpts
----@param spinner_ctx {frame:integer}
----@return fun() redraw
-local function setup_decorations(buf, state, opts, spinner_ctx)
-  local label_ns = vim.api.nvim_create_namespace('vv-explorer-prompt-label')
-  local ph_ns = vim.api.nvim_create_namespace('vv-explorer-prompt-ph')
-
-  local function current_mode()
-    return (opts.get_mode and opts.get_mode()) or 'fuzzy'
-  end
-
-  -- line 0 永远空字符串，用 overlay 画 mode badge + 快捷键提示 + 状态文案
-  local function draw_label()
-    if not vim.api.nvim_buf_is_valid(buf) then return end
-    vim.api.nvim_buf_clear_namespace(buf, label_ns, 0, -1)
-
-    local md = Filter.display(current_mode())
-    local segs = {
-      { ' ',                           'Comment' },
-      { md.icon .. ' ' .. md.label,    md.hl },
-      { '  ',                          'Comment' },
-      { '<S-Tab>',                     'Special' },
-      { ' switch',                     'Comment' },
-    }
-
-    local f = state.filter
-    local status
-    local spin = SPINNER_FRAMES[spinner_ctx.frame] .. ' '
-    if f and f.index_building then
-      status = spin .. 'indexing…'
-    elseif f and f.searching then
-      status = spin .. 'searching…'
-    elseif f and f.match_count ~= nil and (f.query or '') ~= '' then
-      status = string.format('%d match%s', f.match_count, f.match_count == 1 and '' or 'es')
-    end
-    if status then
-      segs[#segs + 1] = { ' · ',  'Comment' }
-      local text = status
-      if f and f.display_count and f.match_count and f.display_count < f.match_count then
-        text = string.format('showing %d of %d', f.display_count, f.match_count)
-      end
-      segs[#segs + 1] = { text, 'Comment' }
-    end
-
-    vim.api.nvim_buf_set_extmark(buf, label_ns, LABEL_ROW, 0, {
-      virt_text = segs,
-      virt_text_pos = 'overlay',
-      right_gravity = false,
-    })
-  end
-
-  -- placeholder：input 行为空时 overlay；第一字符即被覆盖
-  local function draw_placeholder()
-    if not vim.api.nvim_buf_is_valid(buf) then return end
-    vim.api.nvim_buf_clear_namespace(buf, ph_ns, 0, -1)
-    local line = vim.api.nvim_buf_get_lines(buf, INPUT_ROW, INPUT_ROW + 1, false)[1] or ''
-    if #line == 0 then
-      vim.api.nvim_buf_set_extmark(buf, ph_ns, INPUT_ROW, 0, {
-        virt_text = { { 'type to filter…', 'Comment' } },
-        virt_text_pos = 'overlay',
-        right_gravity = false,
-      })
-    end
-  end
-
+---@return fun(): integer
+local function make_debounce(state)
   return function()
-    draw_label()
-    draw_placeholder()
-  end
-end
-
--- 绑定 prompt 内的所有 keymap：取消 / 提交 / 模式切换 / match 导航 / 分屏打开
----@param buf integer
----@param opts VVExplorerPromptOpts
----@param ctx { close:fun(), redraw:fun(), get_query:fun():string }
-local function setup_keymaps(buf, opts, ctx)
-  local map = function(lhs, fn)
-    vim.keymap.set({ 'i', 'n' }, lhs, fn, { buffer = buf, nowait = true, silent = true })
-  end
-
-  -- 光标锁定 100% 走 CursorMoved/CursorMovedI（在 setup_autocmds 里），不再列 keymap 黑名单——
-  -- 黑名单覆盖不全（<C-o>gg / 鼠标点击 / 折叠跳转 等），autocmd 是唯一稳妥兜底
-
-  -- stopinsert 必须先于 close：否则 prompt 关后 Insert 模式残留，焦点回 tree 时按键写到落脚 buffer
-  map('<Esc>', function()
-    vim.cmd.stopinsert()
-    ctx.close()
-    opts.on_cancel()
-  end)
-
-  map('<CR>', function()
-    local q = ctx.get_query()
-    vim.cmd.stopinsert()
-    ctx.close()
-    opts.on_submit(q)
-  end)
-
-  vim.keymap.set('n', 'q', function()
-    vim.cmd.stopinsert()
-    ctx.close()
-    opts.on_cancel()
-  end, { buffer = buf, nowait = true, silent = true })
-
-  if opts.on_cycle_mode then
-    map('<S-Tab>', function()
-      opts.on_cycle_mode()
-      ctx.redraw()
-    end)
-  end
-
-  if opts.on_navigate then
-    map('<C-n>', function() opts.on_navigate(1) end)
-    map('<C-p>', function() opts.on_navigate(-1) end)
-  end
-
-  if opts.on_open_in then
-    local function open_then_close(kind)
-      return function()
-        vim.cmd.stopinsert()
-        ctx.close()
-        opts.on_open_in(kind)
-      end
-    end
-    map('<C-x>', open_then_close('split'))
-    map('<C-v>', open_then_close('vsplit'))
-  end
-end
-
----@param state table
----@param opts VVExplorerPromptOpts
-function M.open(state, opts)
-  local initial = opts.initial or ''
-  local buf, win = setup_floating_window(state, initial)
-  if not buf or not win then return end
-
-  local spinner_ctx = { frame = 1 }
-  local closed = false
-  -- debounce 的清理句柄：在创建 debounced fn 后赋值（见下方），close() 时调用以释放 uv timer
-  local cancel_debounce = nil
-
-  local redraw = setup_decorations(buf, state, opts, spinner_ctx)
-  redraw()
-  -- 让 actions.refilter 在每次过滤后回调，刷新 mode badge / status / placeholder
-  state.filter.on_redraw = redraw
-
-  -- spinner：index_building / searching 期间每 80ms 转一帧
-  local spinner_timer = nil
-  local function stop_spinner()
-    if not spinner_timer then return end
-    spinner_timer:stop()
-    pcall(function() spinner_timer:close() end)
-    spinner_timer = nil
-  end
-  local function start_spinner()
-    if spinner_timer then return end
-    spinner_ctx.frame = 1
-    spinner_timer = vim.uv.new_timer()
-    spinner_timer:start(0, 80, vim.schedule_wrap(function()
-      if closed then stop_spinner(); return end
-      local f = state.filter
-      if not f or (not f.searching and not f.index_building) then
-        stop_spinner()
-        redraw()
-        return
-      end
-      spinner_ctx.frame = (spinner_ctx.frame % #SPINNER_FRAMES) + 1
-      redraw()
-    end))
-  end
-
-  -- 光标落在 input 行行尾
-  vim.api.nvim_win_set_cursor(win, { INPUT_LNUM, #initial })
-  vim.cmd.startinsert({ bang = true })
-
-  local function get_query()
-    local line = vim.api.nvim_buf_get_lines(buf, INPUT_ROW, INPUT_ROW + 1, false)[1] or ''
-    return line
-  end
-
-  local function close()
-    if closed then return end
-    closed = true
-    stop_spinner()
-    -- 释放 debounce 内部常驻的 uv timer，否则反复开关过滤会单调泄漏 timer 句柄
-    if cancel_debounce then pcall(cancel_debounce) end
-    if state.filter then state.filter.on_redraw = nil end
-    if vim.api.nvim_win_is_valid(win) then
-      pcall(vim.api.nvim_win_close, win, true)
-    end
-  end
-
-  -- 若打开时 fd 正在建索引，立刻启动 spinner
-  if state.filter and state.filter.index_building then start_spinner() end
-
-  local aug = vim.api.nvim_create_augroup('vv-explorer-prompt.' .. buf, { clear = true })
-
-  -- 兜底：buffer 被任何路径 wipe（含绕过 close() 的外部关闭，如 :VVExplorerClose
-  -- 级联关窗）时，确保走 close()，释放 debounce 的 uv timer，杜绝句柄泄漏。
-  vim.api.nvim_create_autocmd('BufWipeout', {
-    group = aug,
-    buffer = buf,
-    once = true,
-    callback = function() close() end,
-  })
-
-  -- 兜底：用户用任何方式（鼠标、误按方向键）跑到 line 0 就拉回 line 1
-  vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
-    group = aug,
-    buffer = buf,
-    callback = function()
-      if closed or not vim.api.nvim_win_is_valid(win) then return end
-      local pos = vim.api.nvim_win_get_cursor(win)
-      if pos[1] ~= INPUT_LNUM then
-        pcall(vim.api.nvim_win_set_cursor, win, { INPUT_LNUM, pos[2] })
-      end
-    end,
-  })
-
-  local filter_opts = state.opts and state.opts.filter or {}
-  local threshold = filter_opts.debounce_threshold or 5000
-  local max_ms = filter_opts.debounce_max_ms or 600
-
-  local get_debounce_ms = function()
-    local count = state.filter and state.filter.index and #state.filter.index or 0
-    if count >= threshold then
-      return math.min(max_ms, math.floor(count / 100))
-    end
+    local fo = (state.opts and state.opts.filter) or {}
+    local threshold = fo.debounce_threshold or 5000
+    local max_ms = fo.debounce_max_ms or 600
+    local count = (state.filter and state.filter.index and #state.filter.index) or 0
+    if count >= threshold then return math.min(max_ms, math.floor(count / 100)) end
     return 30
   end
+end
 
-  local on_change_debounced
-  on_change_debounced, cancel_debounce = require('vv-utils.timer').debounce(function()
-    if closed or not vim.api.nvim_buf_is_valid(buf) then return end
-    opts.on_change(get_query())
-  end, get_debounce_ms)
+-- 非 busy 状态文案：'N matches' / 'showing X of Y'（busy 时 prompt 自己画 spinner，忽略本函数）
+---@param state table
+---@return fun(): string
+local function make_status(state)
+  return function()
+    local f = state.filter
+    if not f or (f.query or '') == '' or f.match_count == nil then return '' end
+    if f.display_count and f.display_count < f.match_count then
+      return string.format('showing %d of %d', f.display_count, f.match_count)
+    end
+    return string.format('%d match%s', f.match_count, f.match_count == 1 and '' or 'es')
+  end
+end
 
-  -- 编辑后重画：label 上的 status 段 / placeholder 都依赖当前 input 内容
-  vim.api.nvim_create_autocmd({ 'TextChangedI', 'TextChanged' }, {
-    group = aug,
-    buffer = buf,
-    callback = function()
-      if state.filter and get_query() ~= '' then
+-- 打开过滤输入框
+---@param state table                vv-explorer state（用 state.win 作锚、state.filter 读状态）
+---@param opts VVExplorerPromptOpts   actions/filter.lua 的语义回调
+---@return VVPromptHandle?            actions 存进 state.filter.prompt，关闭/刷新/spinner 都走它
+function M.open(state, opts)
+  if not (state.win and vim.api.nvim_win_is_valid(state.win)) then return end
+
+  local handle
+  handle = Prompt.open(state.win, {
+    initial       = opts.initial,
+    mode_display  = Filter.display,
+    get_mode      = opts.get_mode,
+    on_cycle_mode = opts.on_cycle_mode,
+    get_status    = make_status(state),
+    debounce      = make_debounce(state),
+    spinner       = {},  -- 启用 busy spinner（push 模型，由 on_input / actions 驱动）
+    on_input      = function(q)
+      -- 每次按键即时反馈：非空即进入 searching（防抖后 refilter 会 set_busy(false)）
+      if (q or '') ~= '' and handle then
         state.filter.searching = true
-        start_spinner()
-      end
-      redraw()
-      on_change_debounced()
-    end,
-  })
-
-  setup_keymaps(buf, opts, { close = close, redraw = redraw, get_query = get_query })
-
-  -- 失焦自动取消（点击了别的窗口）
-  vim.api.nvim_create_autocmd({ 'BufLeave', 'WinLeave' }, {
-    group = aug,
-    buffer = buf,
-    once = true,
-    callback = function()
-      if not closed then
-        close()
-        opts.on_cancel()
+        handle.set_busy(true, 'searching…')
       end
     end,
+    on_change     = opts.on_change,
+    on_accept     = opts.on_submit,   -- 命名统一：explorer on_submit == prompt on_accept
+    on_cancel     = opts.on_cancel,
+    on_navigate   = opts.on_navigate,
+    on_open_in    = opts.on_open_in,
   })
+  return handle
 end
 
 return M
+
+---@class VVExplorerPromptOpts
+---@field initial?       string
+---@field on_change      fun(query: string)
+---@field on_submit      fun(query: string)
+---@field on_cancel      fun()
+---@field on_cycle_mode? fun(): string
+---@field on_navigate?   fun(dir: integer)
+---@field on_open_in?    fun(kind: 'split'|'vsplit')
+---@field get_mode?      fun(): string

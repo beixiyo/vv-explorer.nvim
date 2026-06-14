@@ -28,7 +28,12 @@ function L.attach(M, H)
     -- 仅在「过滤结果刚变化」时让 render_filter 自动滚到最佳匹配；导航/增量重渲不触发
     f._want_scroll = true
     Render.render(state)
-    if f.on_redraw then pcall(f.on_redraw) end
+    -- 刷新 prompt 状态条（push 模型，取代旧 on_redraw 反向钩子）：仍在建索引则保持
+    -- indexing spinner，否则停 spinner，redraw 自动显示 match 数
+    if f.prompt then
+      if f.index_building then f.prompt.set_busy(true, 'indexing…')
+      else f.prompt.set_busy(false) end
+    end
   end
 
   ---@param state table
@@ -197,13 +202,23 @@ function L.attach(M, H)
     if not ensure_filter_index(state) then return end
 
     refilter(state)
-    Prompt.open(state, make_prompt_callbacks(state))
+    -- 句柄存 state.filter.prompt：refilter 用它 set_busy 刷状态、clear_filter 用它连带关浮窗
+    state.filter.prompt = Prompt.open(state, make_prompt_callbacks(state))
+    -- 打开时若 fd/git 仍在建索引，立即进入 indexing spinner（构建完成回调里 refilter 会停）
+    if state.filter.prompt and state.filter.index_building then
+      state.filter.prompt.set_busy(true, 'indexing…')
+    end
   end
 
   function M.clear_filter(state)
     if not state.filter or not state.filter.active then return end
 
     state.filter.active = false
+    -- 连带关掉浮窗（幂等）：close() 不会回调 on_cancel，无递归风险
+    if state.filter.prompt then
+      pcall(state.filter.prompt.close)
+      state.filter.prompt = nil
+    end
     state.filter.query = ''
     state.filter.matched = H.EMPTY_MATCHED
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **过滤输入框骨架下沉 `vv-utils.prompt`**：底部双行浮动 filter 框（曾与 vv-flow `filter.lua` ~90% 逐字同构）抽离为共享模块，本仓 `prompt.lua` 瘦成薄封装。spinner 从「反向读 `state.filter.searching`」改为 push 模型（`handle.set_busy(true,'…')`），消除 `state.filter.on_redraw` 反向钩子；自适应防抖、`<C-n>`/`<C-p>` 导航、`<C-x>`/`<C-v>` 分屏、mode badge 均经 opts 注入。纯内部重构，交互/外观不变
+
 ### Fixed
 
 - **回收站孤儿条目 crash**：trash 目录里若存在「数据文件在、配套 `.meta.json` 丢失」的孤儿条目（早先 `trash()` 中 rename 成功但 meta 写入失败被 pcall 吞、或 meta 被外部清理所致），`Trash.list()` 直接 `Fs.read_all` 该 meta → ENOENT error，连带 `enforce_max_items` 在每次删除后崩（`vim.schedule callback` 报错）。现把 meta 读取包 `pcall`，缺 meta 时按 `original_path='(unknown)'` 兜底列出，单个孤儿不再打挂整个 list/删除流程
