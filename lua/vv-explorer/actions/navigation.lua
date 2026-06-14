@@ -6,6 +6,7 @@ local Preview = require('vv-explorer.preview')
 local Trash = require('vv-explorer.trash')
 local Editor = require('vv-utils.editor')
 local Fs = require('vv-utils.fs')
+local Scroll = require('vv-utils.scroll')
 
 local L = {}
 
@@ -238,28 +239,16 @@ function L.attach(M, H)
   -- ── 滚动委派 ──
 
   local SCROLL_LINES = 5
-  local CE_KEY = vim.api.nvim_replace_termcodes('<C-e>', true, false, true)
-  local CY_KEY = vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
 
-  local function scroll_preview(state, keys)
+  local function scroll_preview(state, direction)
     if not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
     local target = Preview.find_main_win(state.win)
     if not target or not vim.api.nvim_win_is_valid(target) then return end
-    local prev = vim.api.nvim_get_current_win()
-    local cmd = 'normal! ' .. SCROLL_LINES .. keys
-    if prev == target then
-      pcall(vim.cmd, cmd)
-      return
-    end
-    pcall(vim.api.nvim_set_current_win, target)
-    pcall(vim.cmd, cmd)
-    if vim.api.nvim_win_is_valid(prev) then
-      pcall(vim.api.nvim_set_current_win, prev)
-    end
+    Scroll.window(target, direction * SCROLL_LINES)
   end
 
-  function M.scroll_preview_down(state) scroll_preview(state, CE_KEY) end
-  function M.scroll_preview_up(state) scroll_preview(state, CY_KEY) end
+  function M.scroll_preview_down(state) scroll_preview(state, 1) end
+  function M.scroll_preview_up(state) scroll_preview(state, -1) end
 
   function M.trash_panel(state) Trash.open_panel(state) end
 end
