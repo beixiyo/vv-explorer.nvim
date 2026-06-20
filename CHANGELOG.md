@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **禁止鼠标多击 / 拖拽在文件树里选中 visual**：补全漏掉的 `<3-LeftMouse>`（三击选行）/ `<4-LeftMouse>`（四击选块）nop，并挂 `vv-utils.mouse.block_visual_drag` 兜底「从别窗点进树再拖 / 多击」的跨窗口路径（buffer-local Nop 拦不住）
+
 ### Changed
 
 - **删除预览的反第三方 bufferline 防御 hack**：`preview_file` 在 `nvim_win_set_buf` 之后原有「同步 + `vim.schedule` 再强制 `buflisted = false`」两道还原，用于对抗早期 `akinsho/bufferline.nvim` 在 `BufWinEnter` 里把预览 buf 误升级为 listed。现配置已禁用 akinsho、改用自研 vv-bufferline（靠 window-local `is_preview` 标记决定归属，与 `buflisted` 无关），该防御已无对象，删除。保留 set_buf 之前的一次初始 `buflisted = false`（让预览不进 `:ls`、且满足旧预览可删条件）。已在完整真实配置下实测：移除后预览 buf 仍 unlisted、不进 `:ls`、不进分组、正常显示。配套：vv-bufferline 新增 `should_show`，预览期间窗口已有固定分组时**保留**标签栏可见（修掉「树里 j/k 预览新文件时右侧 bufferline 整条消失」）

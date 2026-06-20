@@ -88,6 +88,13 @@ test('init.lua 中 <RightMouse> 已绑定', function()
   assert(init_lua:match('RightMouse'), 'init.lua 中未绑定 <RightMouse>')
 end)
 
+test('init.lua 屏蔽多击 + 跨窗口拖入守卫', function()
+  assert(init_lua:match('<3%-LeftMouse>') and init_lua:match('<4%-LeftMouse>'),
+    'init.lua 未屏蔽 <3-/4-LeftMouse>（三/四击选行/块）')
+  assert(init_lua:match('block_visual_drag'),
+    'init.lua 未调用 vv-utils.mouse.block_visual_drag 兜底跨窗口')
+end)
+
 print('\n[3] README API 注释修正')
 
 test('README 安装示例注释为 :VVExplorer* 而非 :Explorer*', function()
