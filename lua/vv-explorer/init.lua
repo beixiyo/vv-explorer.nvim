@@ -370,6 +370,7 @@ function M.setup(opts)
 
   Icons.compile(config.icon_rules)
   register_highlights()
+  Preview.setup_editor_history()
 
   vim.api.nvim_create_user_command('VVExplorerToggle', function() M.toggle() end, {})
   vim.api.nvim_create_user_command('VVExplorerOpen', function() M.open() end, {})

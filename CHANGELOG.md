@@ -4,10 +4,12 @@
 
 ### Changed
 
+- **删除预览的反第三方 bufferline 防御 hack**：`preview_file` 在 `nvim_win_set_buf` 之后原有「同步 + `vim.schedule` 再强制 `buflisted = false`」两道还原，用于对抗早期 `akinsho/bufferline.nvim` 在 `BufWinEnter` 里把预览 buf 误升级为 listed。现配置已禁用 akinsho、改用自研 vv-bufferline（靠 window-local `is_preview` 标记决定归属，与 `buflisted` 无关），该防御已无对象，删除。保留 set_buf 之前的一次初始 `buflisted = false`（让预览不进 `:ls`、且满足旧预览可删条件）。已在完整真实配置下实测：移除后预览 buf 仍 unlisted、不进 `:ls`、不进分组、正常显示。配套：vv-bufferline 新增 `should_show`，预览期间窗口已有固定分组时**保留**标签栏可见（修掉「树里 j/k 预览新文件时右侧 bufferline 整条消失」）
 - **过滤输入框骨架下沉 `vv-utils.prompt`**：底部双行浮动 filter 框（曾与 vv-flow `filter.lua` ~90% 逐字同构）抽离为共享模块，本仓 `prompt.lua` 瘦成薄封装。spinner 从「反向读 `state.filter.searching`」改为 push 模型（`handle.set_busy(true,'…')`），消除 `state.filter.on_redraw` 反向钩子；自适应防抖、`<C-n>`/`<C-p>` 导航、`<C-x>`/`<C-v>` 分屏、mode badge 均经 opts 注入。纯内部重构，交互/外观不变
 
 ### Fixed
 
+- **打开文件会复原已从分屏分组删除的 buffer**：`open_file` 原先在 `:edit` 之前无条件 `Preview.promote(state)`，把「上一个悬停预览」顺手升级为固定标签——当你只是悬停过 B、随后打开 C 时，B 会被复活，即便它已被 `<leader>bd` 从该分屏分组删除。改为「先 `:edit` 切到目标、再 `Preview.commit(state, main)`」：commit 只升级**真正打开的** buffer，对指向其他文件的陈旧预览只丢弃不升级（`open_in`/分屏走 `Preview.discard`）。配合 vv-bufferline 的 window-local `removed` 标记（`track_current` 与 render 均尊重），被删除的分组 buffer 只有显式重开（点 tab / 经树打开）才回来。删除无调用方的 `Preview.promote`
 - **回收站孤儿条目 crash**：trash 目录里若存在「数据文件在、配套 `.meta.json` 丢失」的孤儿条目（早先 `trash()` 中 rename 成功但 meta 写入失败被 pcall 吞、或 meta 被外部清理所致），`Trash.list()` 直接 `Fs.read_all` 该 meta → ENOENT error，连带 `enforce_max_items` 在每次删除后崩（`vim.schedule callback` 报错）。现把 meta 读取包 `pcall`，缺 meta 时按 `original_path='(unknown)'` 兜底列出，单个孤儿不再打挂整个 list/删除流程
 - **树窗按 `gf` 报 E1513**：树 buffer `winfixbuf=true`，原生 `gf` 试图在锁定窗口切 buffer → `E1513: Cannot switch buffer`。现默认把 `gf` 映射为 `open`，与 `<CR>`/`l` 一致（打开节点 / 展开目录），走已处理 winfixbuf 的 `open_file` 路径
 

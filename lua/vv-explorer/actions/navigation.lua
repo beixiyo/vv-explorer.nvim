@@ -33,14 +33,14 @@ function L.attach(M, H)
       require('vv-utils.sys').open_default(node.path)
       return
     end
-    Preview.promote(state)
     local main = Preview.find_main_win(state.win)
     if not main then
+      Preview.discard(state)
       H.open_in_explorer_split(state, 'rightbelow vsplit', node.path)
       return
     end
     vim.api.nvim_set_current_win(main)
-    local prev_buf = vim.api.nvim_get_current_buf()
+    local prev_buf = Preview.prepare_main_win(main)
     local cur = vim.api.nvim_buf_get_name(0)
     -- 经符号链接打开的文件 buffer 名是 realpath 解析形，而 fnamemodify(':p') 不解析
     -- 链接，直接字符串比对会误判「未打开」并重跑 :edit（脏 buffer 触发 E37）
@@ -49,6 +49,9 @@ function L.attach(M, H)
       vim.cmd('edit ' .. vim.fn.fnameescape(node.path))
       require('vv-utils.bufdelete').wipe_if_throwaway(prev_buf)
     end
+    -- 切到目标文件「之后」结算预览：升级真正打开的 buffer、丢弃指向其他文件的陈旧预览，
+    -- 不会把已从分组删除（<leader>bd）的 buffer 顺手 promote 复原
+    Preview.commit(state, main)
   end
 
   function M.open(state)
@@ -109,10 +112,12 @@ function L.attach(M, H)
       require('vv-utils.sys').open_default(node.path)
       return
     end
-    Preview.promote(state)
+    -- 在分屏（新窗口）打开 → 丢弃 main 里的悬停预览，不顺手 promote 旧预览
+    Preview.discard(state)
     local main = Preview.find_main_win(state.win)
     if main and vim.api.nvim_win_is_valid(main) then
       vim.api.nvim_set_current_win(main)
+      Preview.prepare_main_win(main)
       vim.cmd(cmd .. ' ' .. vim.fn.fnameescape(node.path))
     else
       H.open_in_explorer_split(state, cmd, node.path)
