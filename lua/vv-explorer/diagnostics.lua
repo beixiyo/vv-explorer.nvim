@@ -5,6 +5,14 @@ local UDiag = require('vv-utils.diagnostics')
 
 local M = {}
 
+local function count_total(counts)
+  local total = 0
+  for _, count in pairs(counts or {}) do
+    total = total + count
+  end
+  return total
+end
+
 local function refresh(state)
   -- 树窗口未打开时直接跳过：collect_by_path 会遍历所有 loaded buffer 取诊断计数，
   -- 而 render 反正因 win 失效被跳过 —— 全量扫描纯属浪费。仅关窗保留 buf（close_window_only）、
@@ -33,8 +41,16 @@ function M.detach(state)
   state.diagnostics = nil
 end
 
--- render.lua 通过 M.symbol_for(counts) 查符号，转发 vv-utils.diagnostics
-M.symbol_for = UDiag.symbol_for
+-- render.lua 通过 M.symbol_for(counts) 查行尾徽标；符号选择委托给 vv-utils，数字由 explorer 自己决定显示
+function M.symbol_for(counts)
+  local symbol = UDiag.symbol_for(counts)
+  if not symbol then return nil end
+
+  return {
+    glyph = symbol.glyph .. ' ' .. count_total(counts),
+    hl = symbol.hl,
+  }
+end
 
 -- 重开树（场景 A）时由 init.lua 调用：隐藏期间 refresh 被 win 守卫短路、state.diagnostics 不再更新，
 -- 重开需补一次，避免渲染陈旧诊断

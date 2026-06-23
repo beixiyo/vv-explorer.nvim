@@ -28,6 +28,8 @@ package.path = table.concat({
   vendors_root .. '/vv-bufferline.nvim/lua/?/init.lua',
   vendors_root .. '/vv-utils.nvim/lua/?.lua',
   vendors_root .. '/vv-utils.nvim/lua/?/init.lua',
+  vendors_root .. '/vv-icons.nvim/lua/?.lua',
+  vendors_root .. '/vv-icons.nvim/lua/?/init.lua',
   package.path,
 }, ';')
 
@@ -119,6 +121,17 @@ test('VVGit* 引用块不在表格中间', function()
     local between = readme:sub(vvgit_pos, vvdiag_pos)
     assert(not between:match('\n>'), 'VVGitConflict 和 VVDiag* 之间仍有引用块 >')
   end
+end)
+
+test('诊断符号使用 vv-icons、数量与 Diagnostic* 高亮', function()
+  local Diagnostics = require('vv-explorer.diagnostics')
+  local icons = require('vv-icons')
+  local sym = Diagnostics.symbol_for({
+    [vim.diagnostic.severity.ERROR] = 1,
+    [vim.diagnostic.severity.WARN] = 2,
+  })
+  assert(sym and sym.glyph == icons.diagnostics_error .. ' 3', '应使用 vv-icons error 图标并显示总数量')
+  assert(sym and sym.hl == 'DiagnosticError', '应使用 DiagnosticError 高亮')
 end)
 
 print('\n[5] vv-bufferline 分组预览回归')

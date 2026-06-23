@@ -8,6 +8,7 @@
 
 ### Changed
 
+- **诊断行尾徽标改为 `vv-icons` 图标 + 数量**：文件树不再显示旧的 `E/W/I/H` 字母。诊断符号选择仍委托 `vv-utils.diagnostics`（最高 severity 决定图标与 `Diagnostic*` 颜色），vv-explorer 自己在行尾追加总数量，形如 `󰅙 3`，与 vv-bufferline 的 `icon + count` 展示保持一致
 - **删除预览的反第三方 bufferline 防御 hack**：`preview_file` 在 `nvim_win_set_buf` 之后原有「同步 + `vim.schedule` 再强制 `buflisted = false`」两道还原，用于对抗早期 `akinsho/bufferline.nvim` 在 `BufWinEnter` 里把预览 buf 误升级为 listed。现配置已禁用 akinsho、改用自研 vv-bufferline（靠 window-local `is_preview` 标记决定归属，与 `buflisted` 无关），该防御已无对象，删除。保留 set_buf 之前的一次初始 `buflisted = false`（让预览不进 `:ls`、且满足旧预览可删条件）。已在完整真实配置下实测：移除后预览 buf 仍 unlisted、不进 `:ls`、不进分组、正常显示。配套：vv-bufferline 新增 `should_show`，预览期间窗口已有固定分组时**保留**标签栏可见（修掉「树里 j/k 预览新文件时右侧 bufferline 整条消失」）
 - **过滤输入框骨架下沉 `vv-utils.prompt`**：底部双行浮动 filter 框（曾与 vv-flow `filter.lua` ~90% 逐字同构）抽离为共享模块，本仓 `prompt.lua` 瘦成薄封装。spinner 从「反向读 `state.filter.searching`」改为 push 模型（`handle.set_busy(true,'…')`），消除 `state.filter.on_redraw` 反向钩子；自适应防抖、`<C-n>`/`<C-p>` 导航、`<C-x>`/`<C-v>` 分屏、mode badge 均经 opts 注入。纯内部重构，交互/外观不变
 
@@ -109,4 +110,3 @@
 - `Preview.clear_if_deleted` 封装预览 buffer 清理
 - `clipboard_set` 提取公共 helper，消除 render/render_filter 重复构建
 - `cleanup_deleted_bufs` 路径加尾斜杠防御
-

@@ -44,7 +44,7 @@ local M = {}
 ---@field show_ignored boolean 是否显示 .gitignore 命中的路径（`I` 键切换） @default false
 
 ---@class VVExplorerDiagnosticsConfig
----@field enabled boolean 订阅 LSP 诊断并在行尾显示 E/W/I/H 符号 @default true
+---@field enabled boolean 订阅 LSP 诊断并在行尾显示 vv-icons 诊断图标和数量 @default true
 
 ---@class VVExplorerGlobalMappings
 ---@field toggle string|false  打开/关闭文件树的全局键位（false 禁用） @default '<leader>E'
@@ -233,11 +233,6 @@ local function register_highlights()
     VVExplorerSelected   = { link = 'Visual' }, -- 选区整行底色
     VVExplorerDropTarget = { bg = '#264f78' },   -- 拖拽落点目标目录整行高亮（VSCode list.dropBackground 风）
     VVExplorerDim        = { link = 'Comment' }, -- dotfile + gitignored 暗色
-    -- 诊断符号（Phase 2）—— hl 名已迁移至 VVDiag*（vv-utils.diagnostics）
-    VVDiagError = { link = 'DiagnosticError' },
-    VVDiagWarn  = { link = 'DiagnosticWarn' },
-    VVDiagInfo  = { link = 'DiagnosticInfo' },
-    VVDiagHint  = { link = 'DiagnosticHint' },
     -- 逐字匹配字符：底色同 bufferline 活动 tab (#193d4c)，bold 强调
     -- 只设 bg，fg 从下层 VVExplorerFile/Dir 透下来，不盖掉文件/目录原色
     VVExplorerMatch = { bg = '#193d4c', bold = true },

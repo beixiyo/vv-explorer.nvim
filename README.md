@@ -70,7 +70,7 @@ opts = {
   },
 
   diagnostics = {
-    enabled = true,            -- LSP 诊断行尾符号（E/W/I/H）
+    enabled = true,            -- LSP 诊断行尾图标 + 数量（vv-icons + Diagnostic* 颜色）
   },
 
   binary = {
