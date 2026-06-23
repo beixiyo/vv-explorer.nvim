@@ -58,6 +58,18 @@ local function is_editor_win(win)
   return true
 end
 
+---@param buf integer
+---@return boolean
+local function is_empty_normal_buf(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then return false end
+  if vim.bo[buf].buftype ~= '' then return false end
+  if vim.bo[buf].modified then return false end
+  if vim.api.nvim_buf_get_name(buf) ~= '' then return false end
+
+  return vim.api.nvim_buf_line_count(buf) == 1
+    and (vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or '') == ''
+end
+
 ---@param win integer
 ---@return boolean
 local function is_replaceable_main_win(win)
@@ -68,7 +80,7 @@ local function is_replaceable_main_win(win)
   local buf = vim.api.nvim_win_get_buf(win)
   local ft = vim.bo[buf].filetype
 
-  return ft == 'dashboard' or ft == 'alpha' or ft == 'ministarter'
+  return ft == 'dashboard' or ft == 'alpha' or ft == 'ministarter' or is_empty_normal_buf(buf)
 end
 
 ---@param win integer

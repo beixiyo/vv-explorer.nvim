@@ -219,6 +219,23 @@ test('opening another file does not resurrect a buffer removed from the split (s
   assert(State.has_in_win(main, c), 'commit did not promote the actually-opened buffer c')
 end)
 
+test('empty unnamed editor window is reusable as main target', function()
+  pcall(vim.cmd, 'silent! only')
+
+  local Preview = require('vv-explorer.preview')
+
+  vim.cmd('enew')
+  local main = vim.api.nvim_get_current_win()
+  local main_buf = vim.api.nvim_get_current_buf()
+  vim.bo[main_buf].buflisted = false
+
+  vim.cmd('topleft vnew')
+  local explorer_win = vim.api.nvim_get_current_win()
+  vim.bo.filetype = 'vv-explorer'
+
+  assert(Preview.find_main_win(explorer_win) == main, 'empty normal editor window should be reused as main target')
+end)
+
 print('\n──────────────────────────────────────────────────')
 print(string.format('共 %d 项: %d 通过, %d 失败', passed + failed, passed, failed))
 if failed > 0 then
