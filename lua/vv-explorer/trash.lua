@@ -282,7 +282,7 @@ function M.open_panel(state)
 
   -- 底栏
   lines[#lines + 1] = ''
-  local footer = '  r/Enter restore  d delete  D clean all  q close'
+  local footer = '  Restore r/↵  Delete d  Clean all ⇧D  Close q'
   lines[#lines + 1] = footer
   extmarks[#extmarks + 1] = {
     row = #lines - 1, col = 0,
