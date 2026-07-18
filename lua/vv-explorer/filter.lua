@@ -4,7 +4,7 @@
 -- 三种模式（在 prompt 内 <S-Tab> 循环切换）：
 --   fuzzy → vim.fn.matchfuzzypos（fzf 风打分 + 字符位置高亮）
 --   glob  → vim.glob.to_lpeg（shell glob 语法，无位置高亮）
---   regex → Lua pattern（string.find，无位置高亮）
+--   regex → vim.regex（Vim 正则，无位置高亮）
 
 local M = {}
 

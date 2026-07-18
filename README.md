@@ -101,7 +101,7 @@ opts = {
 
   global_mappings = {          -- Set to false to disable all global mappings
     toggle = '<leader>E',      -- Simple file-tree toggle
-    reveal = '<leader>e',      -- Reveal current file; toggle if already open and focused
+    reveal = '<leader>e',      -- Reveal current file; toggle if already open
   },
 
   mappings = { ... },          -- Tree-buffer mappings (see the table below)
@@ -116,7 +116,7 @@ Requires the external [`fd`](https://github.com/sharkdp/fd) command. Switch amon
 |---|---|---|
 | **fuzzy** | `vim.fn.matchfuzzypos` | Highlights matched character positions (default) |
 | **glob** | `vim.glob.to_lpeg` | Automatically crosses path segments when `/` is absent (`*.lua` ≡ `**/*.lua`) |
-| **regex** | `string.find` | Lua pattern |
+| **regex** | `vim.regex` | Vim regular expression |
 
 ### Trash
 

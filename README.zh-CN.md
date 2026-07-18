@@ -101,7 +101,7 @@ opts = {
 
   global_mappings = {          -- 设 false 禁用全部全局键位
     toggle = '<leader>E',      -- 打开/关闭文件树（简单 Toggle）
-    reveal = '<leader>e',      -- 定位当前文件（若已打开且聚焦则 Toggle）
+    reveal = '<leader>e',      -- 定位当前文件（若已打开则 Toggle）
   },
 
   mappings = { ... },          -- 树内 buffer 键位（见下方键位表）
@@ -116,7 +116,7 @@ opts = {
 |------|------|------|
 | **fuzzy** | `vim.fn.matchfuzzypos` | 逐字位置高亮（默认） |
 | **glob** | `vim.glob.to_lpeg` | 不含 `/` 时自动跨段（`*.lua` ≡ `**/*.lua`） |
-| **regex** | `string.find` | Lua pattern |
+| **regex** | `vim.regex` | Vim 正则表达式 |
 
 ### 回收站
 
