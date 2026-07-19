@@ -64,6 +64,7 @@ opts = {
   watch = true,                -- libuv fs_event 自动刷新
   select_move_down = true,     -- Tab 多选后自动将光标下移一行
   cwd = nil,                   -- 根目录（nil = vim.fn.getcwd()）
+  sync_cwd_on_cd = 'tab',      -- ']' / '[' 切根时同步 cwd：'tab'（tcd）| 'global'（cd）| false
   icon_rules = {},             -- 自定义图标规则
 
   filter = {
@@ -192,6 +193,19 @@ icon_rules = {
 ```
 
 `scope`：`'file'` / `'directory'` / `'any'`（默认）。优先级：icon_rules > mini.icons > 内置默认
+
+### 对外事件
+
+`]` / `[` 切根时广播此事件，供持有自己根路径的面板（vv-git 等）跟随 —— 这类面板在打开时就把根读进自己的状态，之后不再看 `getcwd()`，光靠 `sync_cwd_on_cd` 够不着它们：
+
+```lua
+vim.api.nvim_create_autocmd('User', {
+  pattern = 'VVExplorerRootChanged',
+  callback = function(args)
+    local root = args.data.root
+  end,
+})
+```
 
 ## 键位
 

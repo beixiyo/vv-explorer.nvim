@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.1] - 2026-07-19
+
+### Fixed
+
+- **`]` / `[` 切根后 git 状态标记不刷新**：git 索引三条线（status / tracked / ignored）都以 `scope = true` 只扫当前 root 范围，而 `cd_to` / `cd_up` 换掉 `state.root` 后从不重跑索引，旧索引被直接复用。表现为 `[` 上翻后兄弟目录的改动全无色标（旧索引是更深层的子集），以及从 HOME-as-repo 进入嵌套独立仓库后仍沿用外层仓库的状态。现切根统一走 `after_root_change`，与 `refresh` 一样重跑三条线
+
+### Added
+
+- **切根时同步 cwd**：新增 `sync_cwd_on_cd`（`'tab'` | `'global'` | `false`，默认 `'tab'`）。`]` / `[` 切根时 `tcd` 到新根（tab-local，不污染其它 tab），telescope / grep / `:terminal` / 面板关着时的 vv-git 等一切读 `getcwd()` 的消费者随之跟随；设 `'global'` 用 `cd` 改全局，设 `false` 保持旧行为
+- **广播 `User VVExplorerRootChanged`**：切根时发出 `data = { root }`，供持有自身根路径、够不着 `getcwd()` 的面板跟随（vv-git 已订阅，开着的面板即时切仓库、关着则记住作为下次打开的默认根）
+
 ## [0.1.0] - 2026-07-13
 
 ### Fixed

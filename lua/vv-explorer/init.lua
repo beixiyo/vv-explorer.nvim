@@ -71,6 +71,7 @@ local M = {}
 ---@field follow_file boolean 切换 buffer 时自动在树中展开并高亮对应文件（不抢焦点） @default true
 ---@field follow_file_debounce_ms integer follow_file BufEnter 防抖延迟（毫秒），用于快速 buffer 切换场景；0 = 不防抖 @default 0
 ---@field cwd string? 默认根目录（nil → vim.fn.getcwd()） @default nil
+---@field sync_cwd_on_cd 'tab'|'global'|false  `]`/`[` 切根时把 cwd 同步到新根，让 telescope / grep / `:terminal` / vv-git 跟随；`'tab'` = `tcd`（只影响 explorer 所在 tab），`'global'` = `cd`（整个 nvim），`false` = 不动 cwd @default 'tab'
 ---@field icon_rules VVExplorerIconRule[] @default {}
 ---@field filter VVExplorerFilterConfig @default { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 }
 ---@field git VVExplorerGitConfig @default { enabled = true, show_ignored = false }
@@ -94,6 +95,7 @@ local defaults = {
   select_move_down = true,
   lsp_rename_timeout_ms = 5000,
   cwd = nil,
+  sync_cwd_on_cd = 'tab',
   icon_rules = {},
   filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },
   git = { enabled = true, show_ignored = false },

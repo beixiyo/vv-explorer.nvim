@@ -22,6 +22,29 @@ function L.attach(M, H)
     H.focus_path(state, node.path)
   end
 
+  -- 切根统一收尾（cd_to / cd_up 共用），三件事缺一不可：
+  --   1. git 索引是 scope=true（只扫 root 当前范围），换根后旧索引不再适用，必须重跑
+  --   2. sync_cwd_on_cd → 把 cwd 同步到新根：telescope / grep / :terminal / 关着面板时的
+  --      vv-git 都读 getcwd()，靠它跟随。默认 'tab'（tcd，只影响 explorer 所在 tab）
+  --   3. 广播 User VVExplorerRootChanged：cwd 改不动「已经开着」的面板（它们持有自己的
+  --      root 字段），故再发一次事件让 vv-git 这类消费者即时切仓库重载
+  ---@param state table
+  local function after_root_change(state)
+    if state.git and state.git.refresh then state.git.refresh() end
+
+    local root = state.root.path
+    local scope = state.opts.sync_cwd_on_cd
+    if scope ~= false then
+      local chdir = (scope == 'global') and vim.cmd.cd or vim.cmd.tcd
+      pcall(chdir, vim.fn.fnameescape(root))
+    end
+
+    vim.api.nvim_exec_autocmds('User', {
+      pattern = 'VVExplorerRootChanged',
+      data = { root = root },
+    })
+  end
+
   local function toggle_dir(state, node)
     node.open = not node.open
     if node.open then Tree.ensure_scanned(node) end
@@ -185,6 +208,7 @@ function L.attach(M, H)
     -- 切根即时失效旧索引（与 after_fs_change 约定一致）；ensure_filter_index 的
     -- root-stamp 校验是兜底，两者并存确保任何改根路径都不会复用旧 root 的索引
     H.invalidate_filter_index(state)
+    after_root_change(state)
     Render.render(state)
   end
 
@@ -194,6 +218,7 @@ function L.attach(M, H)
     state.root = Tree.new_root(parent)
     M.clear_filter(state)
     H.invalidate_filter_index(state)
+    after_root_change(state)
     Render.render(state)
   end
 

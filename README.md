@@ -64,6 +64,7 @@ opts = {
   watch = true,                -- Auto-refresh with libuv fs_event
   select_move_down = true,     -- Move down one row after Tab selection
   cwd = nil,                   -- Root directory (nil = vim.fn.getcwd())
+  sync_cwd_on_cd = 'tab',      -- Sync cwd when changing root with ']' / '[': 'tab' (tcd) | 'global' (cd) | false
   icon_rules = {},             -- Custom icon rules
 
   filter = {
@@ -192,6 +193,19 @@ icon_rules = {
 ```
 
 `scope`: `'file'` / `'directory'` / `'any'` (default). Priority: icon_rules > mini.icons > built-in defaults
+
+### Emitted event
+
+Changing the root with `]` / `[` broadcasts this event, so panels that hold their own root (vv-git and friends) can follow along — `sync_cwd_on_cd` alone cannot reach them, since they read their root once at open time rather than from `getcwd()`:
+
+```lua
+vim.api.nvim_create_autocmd('User', {
+  pattern = 'VVExplorerRootChanged',
+  callback = function(args)
+    local root = args.data.root
+  end,
+})
+```
 
 ## Mappings
 
