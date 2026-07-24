@@ -22,6 +22,7 @@
 
 local Tree = require('vv-explorer.tree')
 local Render = require('vv-explorer.render')
+local UIWindow = require('vv-utils.ui_window')
 local Window = require('vv-explorer.window')
 local Preview = require('vv-explorer.preview')
 local Watch = require('vv-explorer.watch')
@@ -483,6 +484,19 @@ local function is_sole_window()
   return true
 end
 
+local function ensure_unique_window()
+  if not state or not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then return end
+
+  local tab
+  if state.win and vim.api.nvim_win_is_valid(state.win) then
+    tab = vim.api.nvim_win_get_tabpage(state.win)
+  else
+    tab = vim.api.nvim_get_current_tabpage()
+  end
+
+  state.win = UIWindow.ensure_unique_buffer_window(tab, state.buf, state.win)
+end
+
 ---@param opts {cwd?:string}?
 function M.open(opts)
   opts = opts or {}
@@ -496,6 +510,7 @@ function M.open(opts)
     local win, prev = Window.open_split(state.buf, state.opts or config)
     state.win = win
     state.prev_win = prev
+    ensure_unique_window()
     state._skip_preview = true
     Tree.refresh(state.root) -- 隐藏期间 fs_event 一直在跑，多一次 refresh 也 cheap
     -- 隐藏期间诊断 refresh 被 win 守卫短路、state.diagnostics 已陈旧，重开补一次
@@ -539,6 +554,7 @@ function M.open(opts)
       if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then
         return
       end
+      ensure_unique_window()
       if is_sole_window() then return end
       state._tracked_width = vim.api.nvim_win_get_width(state.win)
     end,
