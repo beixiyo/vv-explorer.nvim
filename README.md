@@ -1,7 +1,7 @@
 <div align="center">
   <h1>vv-explorer.nvim</h1>
   <p>English | <a href="./README.zh-CN.md">中文</a></p>
-  <img src="./docs/assets/vv-explorer.png" alt="vv-explorer demo" width="900" />
+  <img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.png" alt="vv-explorer demo" width="900" />
   <p>Want my Neovim configuration? See <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>A VS Code-style Neovim file tree with live preview, asynchronous fd filtering, trash support, and zero third-party dependencies</em>
   <p>
