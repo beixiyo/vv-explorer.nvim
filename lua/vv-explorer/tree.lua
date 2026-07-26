@@ -105,7 +105,7 @@ end
 
 -- 编译 custom filter globs（basename 匹配；失败的 glob 静默忽略）
 ---@param globs string[]?
----@return fun(name:string):boolean? matcher  返回 nil 表示无自定义过滤
+---@return VVExplorerPredicate? matcher  返回 nil 表示无自定义过滤
 local function compile_custom(globs)
   if not globs or #globs == 0 then return nil end
   local patts = {}
@@ -123,7 +123,7 @@ local function compile_custom(globs)
 end
 
 ---@param root table
----@param opts {hidden:boolean, group_empty_dirs:boolean, custom_globs?:string[], is_ignored?:fun(path:string):boolean, show_ignored?:boolean, is_tracked?:fun(path:string):boolean}
+---@param opts VVExplorerFlattenOptions
 ---@return table[] rows  { node, depth, display_name, group_chain, has_children }
 function M.flatten(root, opts)
   local rows = {}
@@ -240,5 +240,15 @@ function M.open_dirs(root)
   visit(root)
   return out
 end
+
+---@alias VVExplorerPredicate fun(value: string): boolean
+
+---@class VVExplorerFlattenOptions
+---@field hidden boolean  是否显示隐藏节点
+---@field group_empty_dirs boolean  是否折叠单一目录链
+---@field custom_globs? string[]  自定义 basename 过滤规则 @default nil
+---@field is_ignored? VVExplorerPredicate  判断路径是否被 Git 忽略 @default nil
+---@field show_ignored? boolean  是否显示被 Git 忽略的路径 @default false
+---@field is_tracked? VVExplorerPredicate  判断路径是否被 Git 跟踪 @default nil
 
 return M

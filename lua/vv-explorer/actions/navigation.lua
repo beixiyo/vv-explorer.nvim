@@ -166,7 +166,7 @@ function L.attach(M, H)
 
     local plan, err = require('vv-utils.exec').resolve(node.path, cfg.opts)
     if not plan then
-      vim.notify('vv-explorer: ' .. (err or 'cannot run ' .. node.path), vim.log.levels.WARN)
+      vim.notify('vv-explorer: ' .. (err or ('cannot run ' .. node.path)), vim.log.levels.WARN)
       return
     end
 
@@ -181,13 +181,9 @@ function L.attach(M, H)
       return
     end
 
-    -- 兜底：原生分屏终端（零插件依赖）
+    -- 原生分屏终端（零插件依赖）
     vim.cmd('botright 15new')
-    if vim.fn.has('nvim-0.11') == 1 then
-      vim.fn.jobstart(plan.cmd, { term = true, cwd = ctx.cwd })
-    else
-      vim.fn.termopen(plan.cmd, { cwd = ctx.cwd })
-    end
+    vim.fn.jobstart(plan.cmd, { term = true, cwd = ctx.cwd })
     vim.cmd('startinsert')
   end
 

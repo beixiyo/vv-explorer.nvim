@@ -5,7 +5,7 @@
   <p>Want my Neovim configuration? See <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>A VS Code-style Neovim file tree with live preview, asynchronous fd filtering, trash support, and zero third-party dependencies</em>
   <p>
-    <img src="https://img.shields.io/badge/Neovim-0.10+-57A143?style=flat-square&logo=neovim&logoColor=white" alt="Requires Neovim 0.10+" />
+    <img src="https://img.shields.io/badge/Neovim-0.11+-57A143?style=flat-square&logo=neovim&logoColor=white" alt="Requires Neovim 0.11+" />
     <img src="https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white" alt="Lua" />
   </p>
 </div>
@@ -43,6 +43,7 @@
     -- Optional: colored file icons
     { 'echasnovski/mini.icons', opts = {} },
   },
+  event = 'VimEnter', -- Required when persist_open should restore without pressing a key first
   keys = { '<leader>e', '<leader>E' },
   ---@type VVExplorerConfig
   opts = {},
@@ -57,7 +58,9 @@ All options and their defaults:
 ---@type VVExplorerConfig
 opts = {
   position = 'left',           -- 'left' | 'right'
-  width = 32,                  -- Window width
+  width = 32,                  -- Initial width; manual resize is persisted by vv-utils.state
+  persist_open = true,         -- Restore the previous open/closed state on the next Neovim session
+  state = nil,                 -- Optional VVStateHandle (default: vv-explorer/panel)
   hidden = false,              -- Show dotfiles (toggle with '.')
   group_empty_dirs = true,     -- Merge single-child directory chains
   preview = true,              -- Automatically preview without opening

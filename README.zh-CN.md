@@ -5,7 +5,7 @@
   <p>想要我的 Neovim 配置？查看 <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>VSCode 风的 Neovim 文件树 — 实时预览、fd 异步过滤、回收站、零第三方依赖</em>
   <p>
-    <img src="https://img.shields.io/badge/Neovim-0.10+-57A143?style=flat-square&logo=neovim&logoColor=white" alt="Requires Neovim 0.10+" />
+    <img src="https://img.shields.io/badge/Neovim-0.11+-57A143?style=flat-square&logo=neovim&logoColor=white" alt="Requires Neovim 0.11+" />
     <img src="https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white" alt="Lua" />
   </p>
 </div>
@@ -43,6 +43,7 @@
     -- 可选：彩色文件图标
     { 'echasnovski/mini.icons', opts = {} },
   },
+  event = 'VimEnter', -- persist_open 要在未按快捷键时自动恢复，需要启动期加载
   keys = { '<leader>e', '<leader>E' },
   ---@type VVExplorerConfig
   opts = {},
@@ -57,7 +58,9 @@
 ---@type VVExplorerConfig
 opts = {
   position = 'left',           -- 'left' | 'right'
-  width = 32,                  -- 窗口宽度
+  width = 32,                  -- 初始宽度；手动 resize 后由 vv-utils.state 持久化
+  persist_open = true,         -- 下次 Neovim 会话恢复上次的打开/关闭状态
+  state = nil,                 -- 可选 VVStateHandle（默认 vv-explorer/panel）
   hidden = false,              -- 显示 dotfile（'.' 键切换）
   group_empty_dirs = true,     -- 单链目录合并
   preview = true,              -- 不打开自动预览

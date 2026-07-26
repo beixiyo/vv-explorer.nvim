@@ -33,33 +33,82 @@ package.path = table.concat({
   package.path,
 }, ';')
 
-local init_lua = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-explorer/init.lua'), '\n')
-
 print('\n=== vv-explorer.nvim 变更验证 ===\n')
-print('[1] 代码实际绑定校验')
+print('[1] 真实 buffer-local 映射校验')
 
-test('init.lua 中 g? 映射到 help', function()
-  assert(init_lua:match("%['g%?'%]%s*=%s*'help'"), "init.lua 中 g? 未映射到 help")
+local mapping_state = {}
+local mapping_handle = {
+  get = function(_, key, default)
+    local value = mapping_state[key]
+    return value == nil and default or value
+  end,
+  set = function(_, key, value)
+    mapping_state[key] = value
+    return true
+  end,
+}
+local mapping_root = vim.fn.tempname()
+vim.fn.mkdir(mapping_root, 'p')
+
+local explorer = require('vv-explorer')
+explorer.setup({
+  state = mapping_handle,
+  persist_open = false,
+  cwd = mapping_root,
+  preview = false,
+  watch = false,
+  follow_file = false,
+  git = false,
+  diagnostics = false,
+  trash = false,
+  global_mappings = false,
+})
+explorer.open()
+
+local explorer_buf = vim.api.nvim_get_current_buf()
+assert(vim.bo[explorer_buf].filetype == 'vv-explorer', 'mapping fixture did not open explorer buffer')
+
+local function find_mapping(mode, lhs)
+  for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(explorer_buf, mode)) do
+    if mapping.lhs == lhs then return mapping end
+  end
+end
+
+test('g? buffer 映射到 help action', function()
+  local mapping = find_mapping('n', 'g?')
+  assert(mapping and mapping.desc == 'vv-explorer: help', 'g? buffer mapping missing or points to wrong action')
 end)
 
-test('init.lua 中 Y 映射到 yank_abs_path', function()
-  assert(init_lua:match("%['Y'%]%s*=%s*'yank_abs_path'"), 'init.lua 中 Y 未映射到 yank_abs_path')
+test('Y buffer 映射到 yank_abs_path action', function()
+  local mapping = find_mapping('n', 'Y')
+  assert(mapping and mapping.desc == 'vv-explorer: yank_abs_path', 'Y buffer mapping missing or points to wrong action')
 end)
 
-test('init.lua 中无 gy 映射', function()
-  assert(not init_lua:match("%['gy'%]"), 'init.lua 中仍存在 gy 映射')
+test('buffer 中无 gy 映射', function()
+  assert(find_mapping('n', 'gy') == nil, 'buffer still contains gy mapping')
 end)
 
-test('init.lua 中 <RightMouse> 已绑定', function()
-  assert(init_lua:match('RightMouse'), 'init.lua 中未绑定 <RightMouse>')
+test('<RightMouse> 使用 buffer-local callback', function()
+  local mapping = find_mapping('n', '<RightMouse>')
+  assert(mapping and mapping.callback, '<RightMouse> callback mapping missing')
 end)
 
-test('init.lua 屏蔽多击 + 跨窗口拖入守卫', function()
-  assert(init_lua:match('<3%-LeftMouse>') and init_lua:match('<4%-LeftMouse>'),
-    'init.lua 未屏蔽 <3-/4-LeftMouse>（三/四击选行/块）')
-  assert(init_lua:match('block_visual_drag'),
-    'init.lua 未调用 vv-utils.mouse.block_visual_drag 兜底跨窗口')
+test('多击映射和 ModeChanged 拖拽守卫实际挂到 panel buffer', function()
+  assert(find_mapping('n', '<3-LeftMouse>'), '<3-LeftMouse> buffer guard missing')
+  assert(find_mapping('n', '<4-LeftMouse>'), '<4-LeftMouse> buffer guard missing')
+
+  local guarded = false
+  for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ event = 'ModeChanged', buffer = explorer_buf })) do
+    if autocmd.desc == 'vv-utils: 面板禁止鼠标拖拽 / 多击进入 visual' then
+      guarded = true
+      break
+    end
+  end
+  assert(guarded, 'ModeChanged visual guard missing from explorer buffer')
 end)
+
+explorer.close()
+vim.fn.delete(mapping_root, 'rf')
 
 print('\n[2] 诊断符号')
 
@@ -108,11 +157,11 @@ test('preview listed buffer from another split does not re-add it to current spl
   assert(vim.api.nvim_win_get_buf(bottom) == b, 'bottom split stopped showing b')
   assert(vim.bo[b].buflisted, 'b should remain listed because bottom split owns it')
 
-  Preview.remember_editor_win(top)
   vim.cmd('topleft vnew')
   local explorer_win = vim.api.nvim_get_current_win()
   local explorer_buf = vim.api.nvim_get_current_buf()
   vim.bo[explorer_buf].filetype = 'vv-explorer'
+  Preview.remember_editor_win(top)
 
   Preview.preview_file({ win = explorer_win, opts = { binary = { intercept = false } } }, b_path)
   vim.wait(100)

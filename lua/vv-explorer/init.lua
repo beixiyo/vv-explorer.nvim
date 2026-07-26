@@ -1,686 +1,92 @@
--- vv-explorer.nvim — VSCode 风文件树（自实现，无 nui/plenary 依赖）
+-- vv-explorer.nvim public facade
 --
--- 设计目标：
---   * 仅文件树（无 buffers/git_status 多 source）
---   * VSCode 风「单击预览」内置（详见 preview.lua）
---   * 空目录折叠（group_empty_dirs，单链 dir 合并显示）
---   * 图标走 mini.icons，可叠加用户 glob/Lua pattern 规则
---   * libuv fs_event 自动刷新
---
--- 依赖：仅 vim.uv / vim.api / vim.fs / vim.glob（Neovim 0.10+ 全部内置）
---
--- 公开 API：
+-- Public API:
 --   require('vv-explorer').setup(opts)
---   require('vv-explorer').open({ cwd? })
+--   require('vv-explorer').open({ cwd?, focus? })
 --   require('vv-explorer').close()
+--   require('vv-explorer').suspend()
 --   require('vv-explorer').toggle({ cwd? })
 --   require('vv-explorer').reveal({ file? })
 --   require('vv-explorer').focus()
---
--- 用户命令（setup 时注册）：
---   :VVExplorerToggle / :VVExplorerOpen / :VVExplorerClose / :VVExplorerReveal / :VVExplorerFocus
+--   require('vv-explorer').get_node_path()
 
-local Tree = require('vv-explorer.tree')
-local Render = require('vv-explorer.render')
-local UIWindow = require('vv-utils.ui_window')
-local Window = require('vv-explorer.window')
-local Preview = require('vv-explorer.preview')
-local Watch = require('vv-explorer.watch')
+local Config = require('vv-explorer.config')
 local Icons = require('vv-explorer.icons')
-local Actions = require('vv-explorer.actions')
-local Git = require('vv-explorer.git')
-local Diagnostics = require('vv-explorer.diagnostics')
-local Trash = require('vv-explorer.trash')
+local Panel = require('vv-explorer.panel')
+local Preview = require('vv-explorer.preview')
 
 local M = {}
 
----@class VVExplorerFilterConfig
----@field custom string[] 永久隐藏的 glob 列表（独立于 `.` toggle），如 {'node_modules', '.DS_Store'} @default {}
----@field max_results integer 最大搜索结果数，避免渲染卡死 @default 1000
----@field debounce_threshold integer 文件数达到此阈值时开始动态防抖（默认 5000，以下 0ms） @default 5000
----@field debounce_max_ms integer 防抖延迟的最高封顶值（毫秒，默认 500） @default 500
-
----@class VVExplorerGitConfig
----@field enabled boolean 启用 git 状态索引（走 `git status --porcelain --ignored`，非 git 仓库自动 no-op） @default true
----@field show_ignored boolean 是否显示 .gitignore 命中的路径（`I` 键切换） @default false
-
----@class VVExplorerDiagnosticsConfig
----@field enabled boolean 订阅 LSP 诊断并在行尾显示 vv-icons 诊断图标和数量 @default true
-
----@class VVExplorerGlobalMappings
----@field toggle string|false  打开/关闭文件树的全局键位（false 禁用） @default '<leader>E'
----@field reveal string|false  展开到并高亮当前 buffer 对应文件的全局键位 @default '<leader>e'
-
----@class VVExplorerBinaryConfig
----@field intercept boolean 拦截二进制文件：不在 nvim 打开，改用系统默认程序 @default true
----@field extensions table<string, boolean> 视为二进制的扩展名集合（小写 key） @default { png = true, jpg = true, ... }
-
----@class VVExplorerExecuteConfig
----@field enabled boolean  启用 `X` 执行光标文件 @default true
----@field confirm boolean  执行前弹确认框（显示将运行的命令，安全） @default true
----@field run fun(cmd:string[], ctx:table)?  自定义运行器（ctx 含 path/cwd/runner）；缺省用原生分屏终端 @default nil
----@field opts VVExecConfig?  透传给 vv-utils.exec.resolve（运行器优先级 / shebang 等） @default {}
-
----@class VVExplorerConfig
----@field position 'left'|'right' @default 'left'
----@field width integer @default 32
----@field hidden boolean 显示 dotfile（`.` 开头） @default false
----@field group_empty_dirs boolean 单链 dir 合并显示 @default true
----@field preview boolean VSCode 风单击预览 @default true
----@field preview_debounce_ms integer 预览防抖延迟（毫秒），光标停顿后才触发预览；0 = 不防抖 @default 138
----@field watch boolean libuv fs_event 自动刷新 @default true
----@field follow_file boolean 切换 buffer 时自动在树中展开并高亮对应文件（不抢焦点） @default true
----@field follow_file_debounce_ms integer follow_file BufEnter 防抖延迟（毫秒），用于快速 buffer 切换场景；0 = 不防抖 @default 0
----@field cwd string? 默认根目录（nil → vim.fn.getcwd()） @default nil
----@field sync_cwd_on_cd 'tab'|'global'|false  `]`/`[` 切根时把 cwd 同步到新根，让 telescope / grep / `:terminal` / vv-git 跟随；`'tab'` = `tcd`（只影响 explorer 所在 tab），`'global'` = `cd`（整个 nvim），`false` = 不动 cwd @default 'tab'
----@field icon_rules VVExplorerIconRule[] @default {}
----@field filter VVExplorerFilterConfig @default { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 }
----@field git VVExplorerGitConfig @default { enabled = true, show_ignored = false }
----@field diagnostics VVExplorerDiagnosticsConfig @default { enabled = true }
----@field binary VVExplorerBinaryConfig @default { intercept = true, extensions = { ... } }
----@field execute VVExplorerExecuteConfig  `X` 按文件类型执行光标文件 @default { enabled = true, confirm = true, opts = {} }
----@field select_move_down boolean  多选时 Tab 切换选中后自动将光标下移一行 @default true
----@field lsp_rename_timeout_ms integer  rename 时 willRenameFiles 请求的超时毫秒数，超时后继续执行文件重命名 @default 5000
----@field global_mappings VVExplorerGlobalMappings|false  全局快捷键（整个 nvim 范围）；设 false 禁用所有 @default { toggle = '<leader>E', reveal = '<leader>e' }
----@field mappings table<string, string|false|fun(state:table)>  树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state） @default { ... }
-local defaults = {
-  position = 'left',
-  width = 32,
-  hidden = false,
-  group_empty_dirs = true,
-  preview = true,
-  preview_debounce_ms = 138,
-  watch = true,
-  follow_file = true,
-  follow_file_debounce_ms = 0,
-  select_move_down = true,
-  lsp_rename_timeout_ms = 5000,
-  cwd = nil,
-  sync_cwd_on_cd = 'tab',
-  icon_rules = {},
-  filter = { custom = {}, max_results = 1000, debounce_threshold = 5000, debounce_max_ms = 500 },
-  git = { enabled = true, show_ignored = false },
-  diagnostics = { enabled = true },
-  binary = {
-    intercept = true,
-    extensions = {
-      -- image
-      png = true, jpg = true, jpeg = true, gif = true, webp = true, avif = true,
-      bmp = true, ico = true, tiff = true, tif = true, psd = true, raw = true,
-      heic = true, heif = true, svgz = true,
-      -- video
-      mp4 = true, mkv = true, avi = true, mov = true, wmv = true, flv = true, webm = true,
-      -- audio
-      mp3 = true, wav = true, flac = true, aac = true, ogg = true, wma = true, m4a = true,
-      -- archive
-      zip = true, tar = true, gz = true, tgz = true, bz2 = true, tbz2 = true, xz = true, txz = true,
-      ['7z'] = true, rar = true, zst = true, lz4 = true, lzma = true,
-      jar = true, war = true, ear = true,
-      deb = true, rpm = true, dmg = true, iso = true, apk = true, ipa = true,
-      -- compiled / object
-      exe = true, dll = true, so = true, dylib = true, o = true, a = true, class = true, pyc = true,
-      wasm = true, bin = true,
-      -- font
-      ttf = true, otf = true, woff = true, woff2 = true, eot = true,
-      -- document (binary)
-      pdf = true, doc = true, docx = true, xls = true, xlsx = true, ppt = true, pptx = true,
-      -- database
-      sqlite = true, db = true,
-    },
-  },
-  execute = {
-    enabled = true,
-    confirm = true,
-    opts = {},
-  },
-  trash = {
-    enabled = true,
-    max_items = 5000,
-    warn_size_mb = 500,
-    scan_on_open = true,
-  },
-  global_mappings = {
-    toggle = '<leader>E',
-    reveal = '<leader>e',
-  },
-  mappings = {
-    ['<C-e>'] = 'scroll_preview_down',
-    ['<C-y>'] = 'scroll_preview_up',
-    ['<CR>']  = 'open',
-    ['l']     = 'open',
-    ['gf']    = 'open', -- 接管原生 gf：树窗 winfixbuf 下原生 gf 会 E1513，统一走 open（打开节点/展开目录）
-    ['o']     = 'system_open', -- 系统工具打开：目录→文件管理器，文件→默认程序（展开/打开仍在 <CR>/l）
-    ['<LeftRelease>'] = function(s)
-      local node = Actions.node_under_cursor(s)
-      if node and node.is_dir then Actions.open(s) end
-    end,
-    ['<RightMouse>'] = function(s)
-      local pos = vim.fn.getmousepos()
-      if pos.line > 0 then
-        pcall(vim.api.nvim_win_set_cursor, s.win, { pos.line, 0 })
-      end
-      Actions.yank_abs_path(s)
-    end,
-    ['h']     = 'close_node',
-    -- 方向键：与 hjkl 同义（↑↓ 见 apply_wrap_movement，←→ 在此）
-    ['<Right>'] = 'open',          -- → 进入文件 / 展开目录（= l）
-    ['<Left>']  = 'close_node',    -- ← 收起目录 / 回父级（= h）
-    -- 折叠空目录链选层：C-h 往浅、C-l 往深，配合 d 精确删除某一层
-    ['<C-l>'] = 'chain_select_deeper',
-    ['<C-h>'] = 'chain_select_shallower',
-    ['.']     = 'toggle_hidden',   -- yazi 风：dotfile 显隐
-    ['<M-.>'] = 'toggle_hidden',
-    ['I']     = 'toggle_gitignored', -- gitignored 显隐（Phase 2 生效）
-    ['<M-i>'] = 'toggle_gitignored',
-    ['R']     = 'refresh',
-    ['Y']     = 'yank_abs_path',   -- 绝对路径
-    [']']     = 'cd_to', -- 进入：把光标目录设为根
-    ['[']     = 'cd_up', -- 返回：上一级目录
-    ['/']     = 'start_filter',
-    ['<Esc>'] = 'escape', -- 优先级：filter > selection > 无操作
-    ['q']     = '__quit',  -- filter 模式时清 filter，否则关树
-    ['g?']    = 'help',
-    -- 打开方式
-    ['<C-x>'] = 'open_split',
-    ['<C-v>'] = 'open_vsplit',
-    ['gx']    = 'system_open',
-    ['X']     = 'execute',     -- 按文件类型执行（确认后跑在终端）
-    -- CRUD
-    ['a']     = 'create',      -- 新建，尾随 '/' 视为目录
-    ['d']     = 'delete',      -- 删除（带确认，批量）
-    ['r']     = 'rename',      -- 重命名（单个）
-    -- 剪贴板（yazi / vim 风格）
-    ['y']     = 'copy_mark',   -- yank：标记复制
-    ['x']     = 'cut_mark',    -- 标记剪切
-    ['p']     = 'paste',       -- 粘贴到光标目录
-    -- 批量选择：Tab 自身即可切换，再按一次取消
-    ['<Tab>'] = 'toggle_select',
-    -- 回收站
-    ['T']     = 'trash_panel',
-  },
-}
-
-local config = defaults
-local state = nil ---@type table?
-
-local Fs = require('vv-utils.fs')
-local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-explorer.json')
-
-local function setup_cursor_snap(s)
-  vim.api.nvim_create_autocmd('CursorMoved', {
-    buffer = s.buf,
-    callback = function()
-      if not s.name_cols or not s.win or not vim.api.nvim_win_is_valid(s.win) then return end
-      local cursor = vim.api.nvim_win_get_cursor(s.win)
-      local target_col = s.name_cols[cursor[1]]
-      if target_col and cursor[2] ~= target_col then
-        vim.api.nvim_win_set_cursor(s.win, { cursor[1], target_col })
-      end
-      -- 光标离开折叠链选段所在行 → 清掉选段高亮与状态
-      if s._chain_sel and s._chain_sel.lnum ~= cursor[1] then
-        Actions.chain_sel_clear(s)
-      end
-    end,
-  })
-end
-
 local function register_highlights()
-  -- 共享 git 状态色（VVGitAdded/Modified/...）统一由 vv-utils.git 注册
   require('vv-utils.git').register_hl()
 
   require('vv-utils.hl').register('vv-explorer.hl', {
-    VVExplorerIndent     = { link = 'Comment' },
-    VVExplorerDir        = { link = 'Directory' },
-    VVExplorerFile       = { link = 'Normal' },
-    VVExplorerRoot       = { link = 'Title' },
-    VVExplorerSelected   = { link = 'Visual' }, -- 选区整行底色
-    VVExplorerDropTarget = { bg = '#264f78' },   -- 拖拽落点目标目录整行高亮（VSCode list.dropBackground 风）
-    VVExplorerDim        = { link = 'Comment' }, -- dotfile + gitignored 暗色
-    -- 逐字匹配字符：底色同 bufferline 活动 tab (#193d4c)，bold 强调
-    -- 只设 bg，fg 从下层 VVExplorerFile/Dir 透下来，不盖掉文件/目录原色
+    VVExplorerIndent = { link = 'Comment' },
+    VVExplorerDir = { link = 'Directory' },
+    VVExplorerFile = { link = 'Normal' },
+    VVExplorerRoot = { link = 'Title' },
+    VVExplorerSelected = { link = 'Visual' },
+    VVExplorerDropTarget = { bg = '#264f78' },
+    VVExplorerDim = { link = 'Comment' },
     VVExplorerMatch = { bg = '#193d4c', bold = true },
-    -- filter prompt mode badge：每个 mode 一个色，bold 突出
-    VVExplorerFilterModeFuzzy = { fg = '#7dcfff', bold = true }, -- 青蓝
-    VVExplorerFilterModeGlob  = { fg = '#e0af68', bold = true }, -- 橙
-    VVExplorerFilterModeRegex = { fg = '#ff6ac1', bold = true }, -- 粉（与 vv-replace 同色）
+    VVExplorerFilterModeFuzzy = { fg = '#7dcfff', bold = true },
+    VVExplorerFilterModeGlob = { fg = '#e0af68', bold = true },
+    VVExplorerFilterModeRegex = { fg = '#ff6ac1', bold = true },
   })
 end
 
--- j/k 到边界循环（首尾绕回），避免卡死
----@param s table
-local function apply_wrap_movement(s)
-  local function move(delta)
-    local last = vim.api.nvim_buf_line_count(s.buf)
-    if last <= 0 then return end
-    local lnum = vim.api.nvim_win_get_cursor(s.win)[1]
-    local target = ((lnum - 1 + delta) % last + last) % last + 1
-    vim.api.nvim_win_set_cursor(s.win, { target, 0 })
-  end
-
-  vim.keymap.set('n', 'j', function() move(1) end,
-    { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: next (wrap)' })
-  vim.keymap.set('n', 'k', function() move(-1) end,
-    { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: prev (wrap)' })
-  -- 方向键 ↑↓ 与 j/k 同义（同样首尾绕回）
-  vim.keymap.set('n', '<Down>', function() move(1) end,
-    { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: next (wrap)' })
-  vim.keymap.set('n', '<Up>', function() move(-1) end,
-    { buffer = s.buf, nowait = true, silent = true, desc = 'vv-explorer: prev (wrap)' })
+local function register_commands()
+  vim.api.nvim_create_user_command('VVExplorerToggle', Panel.toggle, { force = true })
+  vim.api.nvim_create_user_command('VVExplorerOpen', Panel.open, { force = true })
+  vim.api.nvim_create_user_command('VVExplorerClose', Panel.close, { force = true })
+  vim.api.nvim_create_user_command('VVExplorerReveal', Panel.reveal, { force = true })
+  vim.api.nvim_create_user_command('VVExplorerFocus', Panel.focus, { force = true })
+  vim.api.nvim_create_user_command('VVExplorerTrash', Panel.open_trash, {
+    force = true,
+    desc = 'vv-explorer: open trash panel',
+  })
+  vim.api.nvim_create_user_command('VVExplorerExecute', Panel.execute, {
+    force = true,
+    desc = 'vv-explorer: execute file under cursor',
+  })
 end
 
----@param s table
-local function apply_keymaps(s)
-  apply_wrap_movement(s)
-  for lhs, action in pairs(config.mappings) do
-    if action then
-      local is_fn = type(action) == 'function'
-      local desc = is_fn and 'vv-explorer: <fn>' or ('vv-explorer: ' .. action)
-      vim.keymap.set('n', lhs, function()
-        if is_fn then return action(s) end
-        if action == '__close' then return M.close() end
-        if action == '__quit' then
-          if s.filter and s.filter.active then
-            return Actions.clear_filter(s)
-          end
-          return M.close()
-        end
-        local fn = Actions[action]
-        if fn then fn(s) end
-      end, { buffer = s.buf, nowait = true, silent = true, desc = desc })
-    end
+---@param mappings VVExplorerGlobalMappings|false
+local function register_global_mappings(mappings)
+  if not mappings then return end
+  if mappings.toggle then
+    vim.keymap.set('n', mappings.toggle, '<cmd>VVExplorerToggle<cr>', {
+      desc = 'vv-explorer: toggle',
+      silent = true,
+    })
   end
-
-  -- 屏蔽 visual 选区：v/V 在 nofile buffer 里无意义，<C-v> 已映射为 open_vsplit 不动
-  vim.keymap.set('n', 'v', '<Nop>', { buffer = s.buf, silent = true })
-  vim.keymap.set('n', 'V', '<Nop>', { buffer = s.buf, silent = true })
-  -- 屏蔽鼠标拖拽 / 多击触发 visual 选区（面板已聚焦时干净拦截，无闪烁）
-  -- 必须含 <3-LeftMouse>/<4-LeftMouse>：三击=选行、四击=选块，漏了「快速点几下」会误触发
-  for _, key in ipairs({ '<LeftDrag>', '<2-LeftMouse>', '<3-LeftMouse>', '<4-LeftMouse>', '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
-    vim.keymap.set({ 'n', 'x' }, key, '<Nop>', { buffer = s.buf, silent = true })
+  if mappings.reveal then
+    vim.keymap.set('n', mappings.reveal, '<cmd>VVExplorerReveal<cr>', {
+      desc = 'vv-explorer: reveal current file',
+      silent = true,
+    })
   end
-  vim.keymap.set('x', '<RightMouse>', '<Esc>', { buffer = s.buf, silent = true })
-  -- 跨窗口「从别窗点进树再拖 / 多击」时上面的 buffer-local 映射拦不住（按下事件走源窗口
-  -- keymap），靠 ModeChanged 守卫兜底：面板内一旦进 visual 立即退回 normal
-  require('vv-utils.mouse').block_visual_drag(s.buf)
-end
-
-local function reveal_no_focus(file)
-  if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
-
-  state._pending_reveal = file
-
-  -- 精确路径匹配：find_row 的 ancestor 回溯会把「在折叠目录中的文件」误判为已可见，
-  -- 导致光标只移到折叠目录行而跳过展开逻辑。初始判断只检查 file 本身是否已渲染
-  local norm = vim.fs.normalize(file)
-  local existing = state.path_to_row and state.path_to_row[norm]
-  if existing then
-    state._pending_reveal = nil
-    local cur = vim.api.nvim_win_get_cursor(state.win)[1]
-    if cur ~= existing then
-      vim.api.nvim_win_set_cursor(state.win, { existing, 0 })
-    end
-    return
-  end
-
-  if not Actions.expand_to_file(state, file) then
-    state._pending_reveal = nil
-    return
-  end
-  Render.render(state)
-
-  -- 目标行已渲染则归位（strict 定位：symlink 解析 + group_empty_dirs 合并目录，但不回溯祖先）；
-  -- 若因 git is_tracked 异步未就绪而暂时定位不到，保留 pending 待后续 render_stable 归位
-  Render.try_reveal_cursor(state)
 end
 
 ---@param opts VVExplorerConfig?
 function M.setup(opts)
-  config = vim.tbl_deep_extend('force', defaults, opts or {})
-
-  local persisted = Fs.load_json(PERSIST_FILE)
-  if persisted.width then config.width = persisted.width end
-
-  -- trash: false → 关闭, true → 默认, table → 合并
-  if config.trash == false then
-    config.trash = { enabled = false }
-  elseif config.trash == true then
-    config.trash = vim.tbl_deep_extend('force', {}, defaults.trash)
-  end
-  Trash.setup(config.trash)
-
-  -- git / diagnostics: false → 关闭, true → 默认, table → 合并
-  -- tbl_deep_extend('force') 会把 git=false / git=true 整体替换成布尔，
-  -- 后续 config.git.enabled 取下标会崩，故在此归一化为 table（与 trash 一致）
-  if config.git == false then
-    config.git = { enabled = false }
-  elseif config.git == true then
-    config.git = vim.tbl_deep_extend('force', {}, defaults.git)
-  end
-
-  if config.diagnostics == false then
-    config.diagnostics = { enabled = false }
-  elseif config.diagnostics == true then
-    config.diagnostics = vim.tbl_deep_extend('force', {}, defaults.diagnostics)
-  end
-
-  -- execute: false → 关闭（执行任意代码的安全退出，尊重直觉写法）, true → 默认, table → 合并
-  if config.execute == false then
-    config.execute = { enabled = false }
-  elseif config.execute == true then
-    config.execute = vim.tbl_deep_extend('force', {}, defaults.execute)
-  end
+  local config = Config.resolve(opts)
 
   Icons.compile(config.icon_rules)
   register_highlights()
   Preview.setup_editor_history()
-
-  vim.api.nvim_create_user_command('VVExplorerToggle', function() M.toggle() end, {})
-  vim.api.nvim_create_user_command('VVExplorerOpen', function() M.open() end, {})
-  vim.api.nvim_create_user_command('VVExplorerClose', function() M.close() end, {})
-  vim.api.nvim_create_user_command('VVExplorerReveal', function() M.reveal() end, {})
-  vim.api.nvim_create_user_command('VVExplorerFocus', function() M.focus() end, {})
-  vim.api.nvim_create_user_command('VVExplorerTrash', function()
-    Trash.open_panel(state)
-  end, { desc = 'vv-explorer: open trash panel' })
-  vim.api.nvim_create_user_command('VVExplorerExecute', function()
-    if state then Actions.execute(state) end
-  end, { desc = 'vv-explorer: execute file under cursor' })
-
-  -- 全局键位：用户想自己管就 setup({ global_mappings = false })
-  if config.global_mappings then
-    local gm = config.global_mappings
-    if gm.toggle then
-      vim.keymap.set('n', gm.toggle, '<cmd>VVExplorerToggle<cr>',
-        { desc = 'vv-explorer: toggle', silent = true })
-    end
-    if gm.reveal then
-      vim.keymap.set('n', gm.reveal, '<cmd>VVExplorerReveal<cr>',
-        { desc = 'vv-explorer: reveal current file', silent = true })
-    end
-  end
-
-  if config.follow_file then
-    local reveal_fn = reveal_no_focus
-    if config.follow_file_debounce_ms > 0 then
-      local cancel_follow
-      reveal_fn, cancel_follow = require('vv-utils.timer').debounce(reveal_no_focus, config.follow_file_debounce_ms)
-      vim.api.nvim_create_autocmd('VimLeavePre', { once = true, callback = cancel_follow })
-    end
-
-    vim.api.nvim_create_autocmd('BufEnter', {
-      callback = function(ev)
-        if not M.is_open() then return end
-        if state and ev.buf == state.buf then return end
-        local win = vim.api.nvim_get_current_win()
-        if vim.api.nvim_win_get_config(win).relative ~= '' then return end
-        if vim.bo[ev.buf].buftype ~= '' then return end
-        local file = vim.api.nvim_buf_get_name(ev.buf)
-        if file == '' then return end
-        if vim.fn.filereadable(file) == 0 and vim.fn.isdirectory(file) == 0 then return end
-        reveal_fn(file)
-      end,
-    })
-  end
-
-  vim.api.nvim_create_autocmd('VimLeavePre', {
-    callback = function()
-      if state and state._tracked_width then
-        Fs.save_json(PERSIST_FILE, { width = state._tracked_width })
-      end
-    end,
-  })
-
-  -- 拖拽：kitty DnD 落点（脱 tmux）→ 复制到落点目录 + 实时高亮；否则回退到光标目录 / 打开文件
-  require('vv-explorer.dnd').attach(function() return state end)
+  register_commands()
+  register_global_mappings(config.global_mappings)
+  Panel.setup(config)
 end
 
--- state 的生命周期分两类字段：
---   ephemeral（每次 open 重建）：win, prev_win, rows, path_to_row
---   persistent（跨 close/open 保留）：buf, root, opts, filter, _watches, _fs_cancel, _rescan_watches
---
--- close 时只关 win + 清 ephemeral；buf/树数据/fs_event/filter 全部留给下次 open 复用
--- 这靠 Window.create_buf 设的 bufhidden='hide' 保证窗口关了 buf 不被销毁
-
-function M.is_open()
-  if not state or not state.win or not state.buf then return false end
-  if not vim.api.nvim_win_is_valid(state.win) then return false end
-  if not vim.api.nvim_buf_is_valid(state.buf) then return false end
-  if vim.api.nvim_win_get_buf(state.win) ~= state.buf then return false end
-  return true
-end
-
--- buf 被真正销毁（用户 :bwipe 或 nvim 退出）→ 整个 state 报废
-local function on_buf_wiped()
-  if not state then return end
-  pcall(Watch.detach, state)
-  pcall(Preview.detach, state)
-  pcall(Git.detach, state)
-  pcall(Diagnostics.detach, state)
-  state = nil
-end
-
--- 只关窗口，保留 state 里所有 persistent 字段，fs_event 继续在后台跑
-local function close_window_only()
-  if not state then return end
-  if state.win and vim.api.nvim_win_is_valid(state.win) then
-    if state.opts then state.opts.width = state._tracked_width end
-    Window.close_win(state.win)
-  end
-  state.win = nil
-  state.prev_win = nil
-  state.rows = nil
-  state.path_to_row = nil
-  state._pending_reveal = nil
-end
-
-local function is_sole_window()
-  if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then return false end
-  local tab = vim.api.nvim_win_get_tabpage(state.win)
-  for _, w in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-    if w ~= state.win and vim.api.nvim_win_get_config(w).relative == '' then
-      return false
-    end
-  end
-  return true
-end
-
-local function ensure_unique_window()
-  if not state or not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then return end
-
-  local tab
-  if state.win and vim.api.nvim_win_is_valid(state.win) then
-    tab = vim.api.nvim_win_get_tabpage(state.win)
-  else
-    tab = vim.api.nvim_get_current_tabpage()
-  end
-
-  state.win = UIWindow.ensure_unique_buffer_window(tab, state.buf, state.win)
-end
-
----@param opts {cwd?:string}?
-function M.open(opts)
-  opts = opts or {}
-  if M.is_open() then
-    vim.api.nvim_set_current_win(state.win)
-    return
-  end
-
-  -- 场景 A：state 有效但窗口关了 → 复用 buf + 树数据 + fs_event
-  if state and state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-    local win, prev = Window.open_split(state.buf, state.opts or config)
-    state.win = win
-    state.prev_win = prev
-    ensure_unique_window()
-    state._skip_preview = true
-    Tree.refresh(state.root) -- 隐藏期间 fs_event 一直在跑，多一次 refresh 也 cheap
-    -- 隐藏期间诊断 refresh 被 win 守卫短路、state.diagnostics 已陈旧，重开补一次
-    if state.opts and state.opts.diagnostics and state.opts.diagnostics.enabled then
-      Diagnostics.refresh(state)
-    end
-    Render.render(state)
-    state._skip_preview = nil
-    vim.api.nvim_create_autocmd('WinClosed', {
-      pattern = tostring(win),
-      once = true,
-      callback = close_window_only,
-    })
-    return
-  end
-
-  -- 场景 B：首次打开（或 buf 被销毁过）→ 完整创建
-  local cwd = opts.cwd or config.cwd or vim.fn.getcwd()
-  local buf = Window.create_buf()
-  local win, prev = Window.open_split(buf, config)
-
-  state = {
-    buf = buf,
-    win = win,
-    prev_win = prev,
-    root = Tree.new_root(cwd),
-    opts = vim.tbl_deep_extend('force', {}, config),
-    _tracked_width = config.width,
-  }
-  state.on_after_render = function(s)
-    if s._rescan_watches then s._rescan_watches() end
-  end
-
-  -- win 相关的两个 autocmd（WinResized 跟踪宽度 + 全局 WinClosed 补窗）收进专用
-  -- augroup，每次 open 用 clear=true 复用同名 group：先清掉上一轮再注册，计数恒定不叠加
-  local win_aug = vim.api.nvim_create_augroup('vv-explorer.win', { clear = true })
-
-  vim.api.nvim_create_autocmd('WinResized', {
-    group = win_aug,
-    callback = function()
-      if not state or not state.win or not vim.api.nvim_win_is_valid(state.win) then
-        return
-      end
-      ensure_unique_window()
-      if is_sole_window() then return end
-      state._tracked_width = vim.api.nvim_win_get_width(state.win)
-    end,
-  })
-
-  apply_keymaps(state)
-  setup_cursor_snap(state)
-  if config.preview then Preview.attach(state) end
-  if config.watch then Watch.attach(state) end
-  if config.git.enabled then Git.attach(state) end
-  if config.diagnostics.enabled then Diagnostics.attach(state) end
-
-  state._skip_preview = true
-  Render.render(state)
-  state._skip_preview = nil
-
-  if config.trash.enabled and config.trash.scan_on_open then
-    Trash.scan_size(function(bytes)
-      local mb = bytes / (1024 * 1024)
-      if mb > config.trash.warn_size_mb then
-        vim.notify(
-          string.format('vv-explorer: trash %.0f MB, consider :VVExplorerTrash to clean', mb),
-          vim.log.levels.WARN
-        )
-      end
-    end)
-  end
-
-  -- 用户手动关窗（:q / <C-w>q）→ 走 close_window_only（保留 state）
-  vim.api.nvim_create_autocmd('WinClosed', {
-    pattern = tostring(win),
-    once = true,
-    callback = close_window_only,
-  })
-  -- buf 真被销毁（:bwipe 或 nvim 退出）→ 清 state 彻底
-  vim.api.nvim_create_autocmd({ 'BufWipeout' }, {
-    buffer = buf,
-    once = true,
-    callback = on_buf_wiped,
-  })
-
-  -- 内容窗口被关（:bd / :bwipe 等）导致 explorer 成为唯一窗口 → 补建伴随窗口恢复布局
-  vim.api.nvim_create_autocmd('WinClosed', {
-    group = win_aug,
-    callback = function(ev)
-      if not state or not state.win then return end
-      if not vim.api.nvim_win_is_valid(state.win) then return end
-      if tonumber(ev.match) == state.win then return end
-
-      vim.schedule(function()
-        if not state or not state.win then return end
-        if not vim.api.nvim_win_is_valid(state.win) then return end
-        if not is_sole_window() then return end
-
-        local saved_width = state._tracked_width
-        vim.api.nvim_set_current_win(state.win)
-        local pos = state.opts and state.opts.position or 'left'
-        vim.cmd(pos == 'right' and 'topleft vnew' or 'botright vnew')
-        vim.bo.buflisted = false
-        vim.bo.bufhidden = 'wipe'
-        vim.api.nvim_win_set_width(state.win, saved_width)
-      end)
-    end,
-  })
-end
-
-function M.close()
-  close_window_only()
-end
-
----@param opts {cwd?:string}?
-function M.toggle(opts)
-  if M.is_open() then M.close() else M.open(opts) end
-end
-
----@param opts {file?:string}?
-function M.reveal(opts)
-  if M.is_open() then
-    M.close()
-    return
-  end
-
-  opts = opts or {}
-  local file = opts.file or vim.api.nvim_buf_get_name(0)
-  if file == '' or vim.fn.filereadable(file) == 0 and vim.fn.isdirectory(file) == 0 then
-    if not M.is_open() then M.open() end
-    -- 无可定位的当前文件（scratch / [No Name]）→ 同样拉回根行，避免停在复用 buffer 的残留位置
-    if state and state.win and vim.api.nvim_win_is_valid(state.win) then
-      pcall(vim.api.nvim_win_set_cursor, state.win, { 1, 0 })
-    end
-    M.focus()
-    return
-  end
-
-  if not M.is_open() then M.open() end
-  if not state then return end
-
-  state._skip_preview = true
-  state._pending_reveal = file
-  local positioned = false
-  if Actions.expand_to_file(state, file) then
-    Render.render(state)
-    -- 目标行已渲染则归位；若因 git is_tracked 异步未就绪、hidden+tracked 祖先暂被
-    -- 过滤而定位不到，则保留 pending，待 git 完成的 render_stable 出现后归位
-    positioned = Render.try_reveal_cursor(state)
-  else
-    state._pending_reveal = nil
-  end
-  -- 目标当下不可见（隐藏/被过滤/不在树内，或 git 异步未就绪）：把光标拉回根行。
-  -- explorer buffer 跨 open/close 复用，不重置会停在上一次的残留位置（如之前 follow 跟到
-  -- 的别的文件），表现为「在 .git/config 上 reveal 却被带到 context.sh」
-  if not positioned and state.win and vim.api.nvim_win_is_valid(state.win) then
-    pcall(vim.api.nvim_win_set_cursor, state.win, { 1, 0 })
-  end
-  state._skip_preview = nil
-  M.focus()
-end
-
-function M.focus()
-  if M.is_open() then vim.api.nvim_set_current_win(state.win) end
-end
-
-function M.get_node_path()
-  if not state then return nil end
-  local node = Actions.node_under_cursor(state)
-  return node and node.path or nil
-end
+M.is_open = Panel.is_open
+M.open = Panel.open
+M.close = Panel.close
+M.suspend = Panel.suspend
+M.toggle = Panel.toggle
+M.reveal = Panel.reveal
+M.focus = Panel.focus
+M.get_node_path = Panel.get_node_path
 
 return M
