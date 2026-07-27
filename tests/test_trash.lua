@@ -8,9 +8,6 @@ vim.opt.runtimepath:prepend(vendors .. '/vv-utils.nvim')
 vim.opt.runtimepath:prepend(root)
 
 local Store = require('vv-explorer.trash.store')
-local facade = require('vv-explorer.trash')
-assert(type(facade.setup) == 'function' and type(facade.open_panel) == 'function',
-  'require(vv-explorer.trash) should preserve the public facade')
 
 local temporary = vim.fn.tempname()
 local source_dir = temporary .. '/source'

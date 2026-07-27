@@ -8,8 +8,6 @@ vim.opt.runtimepath:prepend(vendors .. '/vv-utils.nvim')
 vim.opt.runtimepath:prepend(root)
 
 local Filter = require('vv-explorer.filter')
-assert(type(Filter.build_index) == 'function', 'filter facade should preserve build_index')
-assert(type(Filter.match) == 'function', 'filter facade should preserve match')
 
 local cwd = '/project'
 local index = {

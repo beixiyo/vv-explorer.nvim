@@ -133,6 +133,7 @@ test('preview listed buffer from another split does not re-add it to current spl
   local Preview = require('vv-explorer.preview')
 
   State.reset()
+  require('vv-bufferline.winbar_host').reset()
   bufferline.setup()
 
   local a_path = '/tmp/vv-explorer-preview-a.ts'
@@ -182,6 +183,7 @@ test('opening another file does not resurrect a buffer removed from the split (s
   local Preview = require('vv-explorer.preview')
 
   State.reset()
+  require('vv-bufferline.winbar_host').reset()
   bufferline.setup()
 
   local b_path = '/tmp/vv-explorer-stale-b.ts'
