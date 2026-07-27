@@ -349,13 +349,16 @@ end
 
 ---Temporarily hide the explorer without changing the persisted open intent.
 ---The returned callback restores only this suspension and is safe to call once.
+---@param opts VVExplorerSuspendOpts?
 ---@return fun()?
-function M.suspend()
+function M.suspend(opts)
   if not M.is_open() then return nil end
+  opts = opts or {}
 
   suspend_generation = suspend_generation + 1
   local generation = suspend_generation
   local resumed = false
+  local focus_on_resume = opts.focus == true
   close_window_only({ persist_open = false })
 
   return function()
@@ -363,7 +366,7 @@ function M.suspend()
     resumed = true
     if generation ~= suspend_generation then return end
     if config.persist_open and panel_state and panel_state:get('open', false) ~= true then return end
-    M.open()
+    M.open({ focus = focus_on_resume })
   end
 end
 
@@ -426,5 +429,8 @@ end
 function M.execute()
   if state then Actions.execute(state) end
 end
+
+---@class VVExplorerSuspendOpts
+---@field focus? boolean 恢复面板时是否聚焦 explorer @default false
 
 return M

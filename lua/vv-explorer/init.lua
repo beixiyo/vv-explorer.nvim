@@ -4,7 +4,7 @@
 --   require('vv-explorer').setup(opts)
 --   require('vv-explorer').open({ cwd?, focus? })
 --   require('vv-explorer').close()
---   require('vv-explorer').suspend()
+--   require('vv-explorer').suspend({ focus? })
 --   require('vv-explorer').toggle({ cwd? })
 --   require('vv-explorer').reveal({ file? })
 --   require('vv-explorer').focus()
