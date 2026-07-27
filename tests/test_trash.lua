@@ -1,5 +1,5 @@
--- vv-explorer trash store behavior
--- Run: nvim --headless -u NONE -l tests/test_trash.lua
+-- vv-explorer 回收站存储行为
+-- 运行：nvim --headless -u NONE -l tests/test_trash.lua
 
 local source = debug.getinfo(1, 'S').source:sub(2)
 local root = vim.fn.fnamemodify(source, ':p:h:h')

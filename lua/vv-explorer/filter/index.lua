@@ -1,4 +1,4 @@
--- Asynchronous full-tree path indexing
+-- 异步构建全树路径索引
 
 local M = {}
 
@@ -14,7 +14,7 @@ function M.build(cwd, opts, on_done)
   local git_root = require('vv-utils.git').root(cwd) or ''
   local in_git = git_root ~= ''
 
-  -- git ls-files is gitignore-aware and handles nested repositories consistently.
+  -- git ls-files 遵循 gitignore 规则，并能统一处理嵌套仓库
   if in_git and not show_ignored then
     local relative_cwd = git_root ~= cwd and cwd:sub(#git_root + 2) or ''
     local command = {
@@ -41,8 +41,8 @@ function M.build(cwd, opts, on_done)
     return true
   end
 
-  -- When ignored paths are visible, include ignored files plus files from ignored nested repos,
-  -- without recursively scanning every ignored system directory.
+  -- 显示被忽略路径时，同时包含被忽略的文件和被忽略嵌套仓库中的文件，
+  -- 但不递归扫描所有被忽略的系统目录
   if in_git then
     local relative_cwd = git_root ~= cwd and cwd:sub(#git_root + 2) or ''
     local tracked_command = {

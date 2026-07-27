@@ -1,5 +1,5 @@
--- vv-explorer filter matcher behavior
--- Run: nvim --headless -u NONE -l tests/test_filter.lua
+-- vv-explorer 过滤匹配器行为
+-- 运行：nvim --headless -u NONE -l tests/test_filter.lua
 
 local source = debug.getinfo(1, 'S').source:sub(2)
 local root = vim.fn.fnamemodify(source, ':p:h:h')

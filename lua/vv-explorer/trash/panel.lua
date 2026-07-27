@@ -1,4 +1,4 @@
--- Trash floating panel
+-- 回收站浮动面板
 
 local M = {}
 

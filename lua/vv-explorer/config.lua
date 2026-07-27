@@ -1,4 +1,4 @@
--- vv-explorer configuration schema, defaults, and normalization
+-- vv-explorer 配置结构、默认值与归一化
 
 local M = {}
 

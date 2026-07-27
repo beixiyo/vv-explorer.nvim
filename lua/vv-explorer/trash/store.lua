@@ -1,4 +1,4 @@
--- Trash storage and recoverable filesystem operations
+-- 回收站存储与可恢复的文件系统操作
 
 local Fs = require('vv-utils.fs')
 

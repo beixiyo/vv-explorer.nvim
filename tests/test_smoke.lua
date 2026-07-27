@@ -1,6 +1,6 @@
 -- vv-explorer.nvim 变更验证脚本
 -- 用法:
---   cd vv-explorer.nvim && nvim --headless -u NONE -l tests/test_smoke.lua
+--   进入 vv-explorer.nvim 后运行：nvim --headless -u NONE -l tests/test_smoke.lua
 --   或在 nvim 内:  :luafile vv-explorer.nvim/tests/test_smoke.lua
 
 local passed = 0

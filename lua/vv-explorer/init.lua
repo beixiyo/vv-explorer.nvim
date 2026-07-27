@@ -1,6 +1,6 @@
--- vv-explorer.nvim public facade
+-- vv-explorer.nvim 公共 facade
 --
--- Public API:
+-- 公共 API：
 --   require('vv-explorer').setup(opts)
 --   require('vv-explorer').open({ cwd?, focus? })
 --   require('vv-explorer').close()

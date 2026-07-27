@@ -1,4 +1,4 @@
--- Recoverable deletion facade
+-- 可恢复删除 facade
 
 local Panel = require('vv-explorer.trash.panel')
 local Store = require('vv-explorer.trash.store')

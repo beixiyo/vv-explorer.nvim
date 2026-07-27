@@ -1,4 +1,4 @@
--- Pure filter mode metadata and path matching
+-- 纯过滤模式元数据与路径匹配
 
 local M = {}
 

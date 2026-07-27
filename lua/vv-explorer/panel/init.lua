@@ -1,4 +1,4 @@
--- Explorer panel lifecycle and runtime state owner
+-- explorer 面板生命周期与运行时状态的持有者
 
 local Actions = require('vv-explorer.actions')
 local Config = require('vv-explorer.config')
@@ -67,7 +67,7 @@ local function on_buf_wiped()
   state = nil
 end
 
--- Only closes the window. Persistent tree/filter/watch state remains attached to the hidden buffer.
+-- 只关闭窗口，持久化的树、过滤和监听状态仍挂在隐藏 buffer 上
 ---@param opts? {persist_open?:boolean}
 local function close_window_only(opts)
   if not state then return end
@@ -133,7 +133,7 @@ local function attach_window_lifecycle()
     end,
   })
 
-  -- If the companion editor closes and leaves only the explorer, recreate a normal editor window.
+  -- 如果伴随的编辑窗口关闭后只剩 explorer，则重新创建普通编辑窗口
   vim.api.nvim_create_autocmd('WinClosed', {
     group = win_group,
     callback = function(ev)
@@ -347,8 +347,8 @@ function M.close()
   close_window_only()
 end
 
----Temporarily hide the explorer without changing the persisted open intent.
----The returned callback restores only this suspension and is safe to call once.
+---临时隐藏 explorer，但不改变持久化的打开意图
+---返回的回调只恢复本次挂起，且最多安全调用一次
 ---@param opts VVExplorerSuspendOpts?
 ---@return fun()?
 function M.suspend(opts)

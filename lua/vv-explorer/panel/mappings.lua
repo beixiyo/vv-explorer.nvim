@@ -1,4 +1,4 @@
--- Buffer-local mappings and cursor behavior for the explorer panel
+-- explorer 面板的 buffer-local 映射与光标行为
 
 local M = {}
 

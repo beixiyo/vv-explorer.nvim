@@ -1,4 +1,4 @@
--- Full-tree filtering facade
+-- 全树过滤 facade
 
 local Index = require('vv-explorer.filter.index')
 local Matcher = require('vv-explorer.filter.matcher')

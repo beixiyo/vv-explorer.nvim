@@ -1,5 +1,5 @@
 -- actions facade 的行为回归测试
--- Run: nvim --headless -u NONE -l tests/test_actions.lua
+-- 运行：nvim --headless -u NONE -l tests/test_actions.lua
 
 local root = vim.fn.getcwd()
 package.path = root .. '/lua/?.lua;' .. root .. '/lua/?/init.lua;' .. package.path

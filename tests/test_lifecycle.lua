@@ -1,5 +1,5 @@
--- vv-explorer panel state integration
--- Run: nvim --headless -u NONE -l tests/test_lifecycle.lua
+-- vv-explorer 面板状态集成
+-- 运行：nvim --headless -u NONE -l tests/test_lifecycle.lua
 
 local source = debug.getinfo(1, 'S').source:sub(2)
 local root = vim.fn.fnamemodify(source, ':p:h:h')
