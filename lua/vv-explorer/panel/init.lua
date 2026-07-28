@@ -422,6 +422,17 @@ function M.get_node_path()
   return node and node.path or nil
 end
 
+---@return string[]
+function M.get_target_paths()
+  if not state then return {} end
+
+  local selected = Actions.selected_paths(state)
+  if #selected > 0 then return selected end
+
+  local path = M.get_node_path()
+  return path and { path } or {}
+end
+
 function M.open_trash()
   Trash.open_panel(state)
 end

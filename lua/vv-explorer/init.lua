@@ -9,6 +9,7 @@
 --   require('vv-explorer').reveal({ file? })
 --   require('vv-explorer').focus()
 --   require('vv-explorer').get_node_path()
+--   require('vv-explorer').get_target_paths()
 
 local Config = require('vv-explorer.config')
 local Icons = require('vv-explorer.icons')
@@ -88,5 +89,6 @@ M.toggle = Panel.toggle
 M.reveal = Panel.reveal
 M.focus = Panel.focus
 M.get_node_path = Panel.get_node_path
+M.get_target_paths = Panel.get_target_paths
 
 return M

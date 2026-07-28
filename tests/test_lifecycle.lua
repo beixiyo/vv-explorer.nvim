@@ -35,7 +35,9 @@ vim.fn.mkdir(tmp, 'p')
 local previous_cwd = vim.fn.getcwd()
 vim.cmd.cd(vim.fn.fnameescape(tmp))
 local target = tmp .. '/target.lua'
+local another = tmp .. '/another.lua'
 vim.fn.writefile({ 'return true' }, target)
+vim.fn.writefile({ 'return false' }, another)
 vim.cmd.edit(vim.fn.fnameescape(target))
 local target_buf = vim.api.nvim_get_current_buf()
 
@@ -66,6 +68,22 @@ local expected_path = assert(vim.uv.fs_realpath(target))
 assert(
   explorer.get_node_path() == expected_path,
   'restoring persisted open state should reveal the startup file without taking focus'
+)
+assert(
+  vim.deep_equal(explorer.get_target_paths(), { expected_path }),
+  'target paths should fall back to the node under the cursor'
+)
+
+vim.api.nvim_set_current_win(explorer_win())
+local toggle_select = vim.fn.maparg('<Tab>', 'n', false, true).callback
+assert(type(toggle_select) == 'function', 'explorer Tab mapping should expose its selection callback')
+toggle_select()
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
+toggle_select()
+local expected_another = assert(vim.uv.fs_realpath(another))
+assert(
+  vim.deep_equal(explorer.get_target_paths(), { expected_another, expected_path }),
+  'target paths should return all selected nodes in stable order'
 )
 
 explorer.reveal()
