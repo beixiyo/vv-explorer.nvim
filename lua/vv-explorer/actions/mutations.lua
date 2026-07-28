@@ -7,6 +7,7 @@ local Fs = require('vv-utils.fs')
 local Trash = require('vv-explorer.trash')
 local Lsp = require('vv-explorer.lsp')
 local Loading = require('vv-utils.loading')
+local Text = require('vv-explorer.text')
 
 local M = {}
 
@@ -158,7 +159,7 @@ function M.attach(Actions, H, context)
       vim.notify('vv-explorer: ' .. verb:lower() .. ' errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
     else
       local past = use_trash and 'Trashed' or 'Deleted'
-      vim.notify(('%s %d item(s)'):format(past, #deleted))
+      vim.notify(('%s %s'):format(past, Text.items(#deleted)))
     end
 
     if #deleted > 0 then

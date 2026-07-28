@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **大小写重命名被误判为目标冲突**：在大小写不敏感文件系统上，`README.MD` → `README.md` 会因目标路径可解析而被拒绝。现由 `vv-utils.fs.rename` 仅在两侧确认是同一个文件对象时放行，仍拒绝覆盖真正存在的其他目标
+- **操作数量通知显示 `item(s)`**：Trash、Delete、Copy 与 Dropped 通知现在按数量显示正确英文单复数，例如 `1 item` / `22 items`
+
 ## [0.2.1] - 2026-07-28
 
 ### Changed

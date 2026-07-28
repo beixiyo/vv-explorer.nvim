@@ -3,6 +3,7 @@
 local Tree = require('vv-explorer.tree')
 local Render = require('vv-explorer.render')
 local Transfer = require('vv-explorer.actions.transfer')
+local Text = require('vv-explorer.text')
 
 local M = {}
 
@@ -48,7 +49,7 @@ function M.attach(Actions, H, context)
     Render.render(state)
     local label = mode == 'cut' and 'Cut' or 'Copy'
     local count = state.clipboard and #state.clipboard.paths or 0
-    if count > 0 then vim.notify(('%s %d item(s)'):format(label, count)) end
+    if count > 0 then vim.notify(('%s %s'):format(label, Text.items(count))) end
   end
 
   function Actions.cut_mark(state) mark(state, 'cut') end

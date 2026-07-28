@@ -3,6 +3,7 @@
 local Tree = require('vv-explorer.tree')
 local Render = require('vv-explorer.render')
 local Transfer = require('vv-explorer.actions.transfer')
+local Text = require('vv-explorer.text')
 
 local M = {}
 
@@ -20,7 +21,7 @@ function M.attach(Actions, H, context)
     if #result.failed > 0 then
       vim.notify('vv-explorer: drop errors:\n' .. table.concat(result.failed, '\n'), vim.log.levels.ERROR)
     elseif result.completed > 0 then
-      vim.notify(('Dropped %d item(s) → %s'):format(result.completed, vim.fn.fnamemodify(dest_dir, ':.')))
+      vim.notify(('Dropped %s → %s'):format(Text.items(result.completed), vim.fn.fnamemodify(dest_dir, ':.')))
     end
 
     context.after_fs_change(state)
