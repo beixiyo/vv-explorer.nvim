@@ -119,7 +119,7 @@ Requires the external [`fd`](https://github.com/sharkdp/fd) command. Switch amon
 | Mode | Engine | Description |
 |---|---|---|
 | **fuzzy** | `vim.fn.matchfuzzypos` | Highlights matched character positions (default) |
-| **glob** | `vim.glob.to_lpeg` | Automatically crosses path segments when `/` is absent (`*.lua` ≡ `**/*.lua`) |
+| **glob** | `vv-utils.glob` + `vim.glob.to_lpeg` | VS Code-style shorthand with any-depth paths, `./` anchoring, comma lists, and `!` exclusions |
 | **regex** | `vim.regex` | Vim regular expression |
 
 ### Trash

@@ -1,26 +1,37 @@
 # Changelog
 
-## [0.2.3] - 2026-07-28
+## 0.3.0 - 2026-07-29
+
+### Added
+
+- **过滤路径补全**：filter prompt 通过 `vv-utils.completion` 暴露现有路径索引，供共享 `vv-utils.blink` source 在 fuzzy 与 glob 模式补全；沿用 hidden、gitignore
+
+### Fixed
+
+- **Glob 搜索简写**：glob 模式改用 `vv-utils.glob` 的共享编译结果，支持简写
+- **补全排序**：Explorer matcher 结果标记为已过滤并携带稳定 rank，避免 Blink 对完整路径二次 fuzzy 后反转原顺序
+
+## 0.2.3 - 2026-07-28
 
 ### Added
 
 - **公开多选路径**：新增 `get_target_paths()`
 
-## [0.2.2] - 2026-07-28
+## 0.2.2 - 2026-07-28
 
 ### Fixed
 
 - **大小写重命名被误判为目标冲突**：在大小写不敏感文件系统上，`README.MD` → `README.md` 会因目标路径可解析而被拒绝。现由 `vv-utils.fs.rename` 仅在两侧确认是同一个文件对象时放行，仍拒绝覆盖真正存在的其他目标
 - **操作数量通知显示 `item(s)`**：Trash、Delete、Copy 与 Dropped 通知现在按数量显示正确英文单复数，例如 `1 item` / `22 items`
 
-## [0.2.1] - 2026-07-28
+## 0.2.1 - 2026-07-28
 
 ### Changed
 
 - **恢复面板时可选是否聚焦**：`suspend({ focus = true })` 返回的恢复回调会在重新打开 explorer 后聚焦面板；默认保持当前窗口和 buffer，不打断原有编辑位置
 - **统一项目注释为中文**：补齐核心模块、测试脚本与配置项注释，保留 API 名称、类型标记和协议术语
 
-## [0.2.0] - 2026-07-26
+## 0.2.0 - 2026-07-26
 
 ### Added
 
@@ -33,7 +44,7 @@
 - **按职责拆分核心模块**：配置、面板生命周期与键位从入口模块分离；文件操作拆为折叠链、剪贴板、拖放、变更与传输模块；过滤拆为索引与匹配器；回收站拆为存储与面板。原有公开入口继续由 facade 导出
 - **收紧窗口生命周期**：`WinResized`、`WinClosed` 与 `VimLeavePre` 统一保存最终宽度、清理防抖任务并维持唯一 explorer 窗口；关闭伴随编辑窗时仍会保留可用的普通编辑窗口
 
-## [0.1.1] - 2026-07-19
+## 0.1.1 - 2026-07-19
 
 ### Fixed
 
@@ -44,7 +55,7 @@
 - **切根时同步 cwd**：新增 `sync_cwd_on_cd`（`'tab'` | `'global'` | `false`，默认 `'tab'`）。`]` / `[` 切根时 `tcd` 到新根（tab-local，不污染其它 tab），telescope / grep / `:terminal` / 面板关着时的 vv-git 等一切读 `getcwd()` 的消费者随之跟随；设 `'global'` 用 `cd` 改全局，设 `false` 保持旧行为
 - **广播 `User VVExplorerRootChanged`**：切根时发出 `data = { root }`，供持有自身根路径、够不着 `getcwd()` 的面板跟随（vv-git 已订阅，开着的面板即时切仓库、关着则记住作为下次打开的默认根）
 
-## [0.1.0] - 2026-07-13
+## 0.1.0 - 2026-07-13
 
 ### Fixed
 

@@ -3,6 +3,7 @@
 --   path/name/type/is_dir/parent/children/open/scanned/hidden
 
 local uv = vim.uv or vim.loop
+local Policy = require('vv-explorer.filter.policy')
 
 local M = {}
 
@@ -103,31 +104,12 @@ function M.refresh(node)
   end
 end
 
--- 编译 custom filter globs（basename 匹配；失败的 glob 静默忽略）
----@param globs string[]?
----@return VVExplorerPredicate? matcher  返回 nil 表示无自定义过滤
-local function compile_custom(globs)
-  if not globs or #globs == 0 then return nil end
-  local patts = {}
-  for _, g in ipairs(globs) do
-    local ok, patt = pcall(vim.glob.to_lpeg, g)
-    if ok and patt then patts[#patts + 1] = patt end
-  end
-  if #patts == 0 then return nil end
-  return function(name)
-    for _, p in ipairs(patts) do
-      if p:match(name) then return true end
-    end
-    return false
-  end
-end
-
 ---@param root table
 ---@param opts VVExplorerFlattenOptions
 ---@return table[] rows  { node, depth, display_name, group_chain, has_children }
 function M.flatten(root, opts)
   local rows = {}
-  local custom = compile_custom(opts.custom_globs)
+  local custom = Policy.compile_custom(opts.custom_globs)
   local is_ignored = opts.is_ignored
   local show_ignored = opts.show_ignored
   local is_tracked = opts.is_tracked

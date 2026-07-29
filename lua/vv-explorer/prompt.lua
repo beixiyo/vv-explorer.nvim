@@ -11,6 +11,7 @@
 --     输入即 set_busy(true,'searching…')，indexing 由 actions 在构建期间 set_busy
 
 local Prompt = require('vv-utils.prompt')
+local Completion = require('vv-explorer.completion')
 local Filter = require('vv-explorer.filter')
 
 local M = {}
@@ -53,6 +54,8 @@ function M.open(state, opts)
   local handle
   handle = Prompt.open(state.win, {
     initial       = opts.initial,
+    filetype      = 'vv-explorer-filter',
+    completion    = Completion.descriptor(state),
     mode_display  = Filter.display,
     get_mode      = opts.get_mode,
     on_cycle_mode = opts.on_cycle_mode,

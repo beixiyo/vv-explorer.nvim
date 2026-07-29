@@ -119,7 +119,7 @@ opts = {
 | 模式 | 引擎 | 说明 |
 |------|------|------|
 | **fuzzy** | `vim.fn.matchfuzzypos` | 逐字位置高亮（默认） |
-| **glob** | `vim.glob.to_lpeg` | 不含 `/` 时自动跨段（`*.lua` ≡ `**/*.lua`） |
+| **glob** | `vv-utils.glob` + `vim.glob.to_lpeg` | VS Code 风格简写；支持任意深度路径、`./` 锚定、逗号组合与 `!` 排除 |
 | **regex** | `vim.regex` | Vim 正则表达式 |
 
 ### 回收站

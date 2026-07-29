@@ -1,5 +1,7 @@
 -- 纯过滤模式元数据与路径匹配
 
+local Glob = require('vv-utils.glob')
+
 local M = {}
 
 M.MODES = { 'fuzzy', 'glob', 'regex' }
@@ -196,19 +198,35 @@ end
 ---@param query string
 ---@return {matched:string[], positions:integer[][]}
 local function match_glob(rels, query)
-  local pattern = query
-  local has_wildcard = pattern:find('[%*%?%[]') ~= nil
-  local has_slash = pattern:find('/') ~= nil
-  if not has_slash then
-    pattern = has_wildcard and ('**/' .. pattern) or ('**/*' .. pattern .. '*')
+  local compiled = Glob.compile_list(query)
+  if not compiled or not vim.lpeg then return { matched = {}, positions = {} } end
+
+  local includes = {}
+  local excludes = {}
+  for _, entry in ipairs(compiled) do
+    local target = entry.negated and excludes or includes
+    for _, raw_pattern in ipairs(entry.patterns) do
+      local pattern = raw_pattern:sub(1, 1) == '/' and raw_pattern:sub(2) or raw_pattern
+      local ok, lpeg_pattern = pcall(vim.glob.to_lpeg, pattern)
+      if not ok then return { matched = {}, positions = {} } end
+      target[#target + 1] = lpeg_pattern
+    end
   end
 
-  local ok, lpeg_pattern = pcall(vim.glob.to_lpeg, pattern)
-  if not ok then return { matched = {}, positions = {} } end
+  ---@param patterns table[]
+  ---@param rel string
+  ---@return boolean
+  local function matches_any(patterns, rel)
+    for _, pattern in ipairs(patterns) do
+      if vim.lpeg.match(pattern, rel) then return true end
+    end
+    return false
+  end
 
   local matched = {}
   for _, rel in ipairs(rels) do
-    if vim.lpeg and vim.lpeg.match(lpeg_pattern, rel) then
+    local included = #includes == 0 or matches_any(includes, rel)
+    if included and not matches_any(excludes, rel) then
       matched[#matched + 1] = rel
     end
   end
