@@ -49,6 +49,15 @@ local mapping_handle = {
 }
 local mapping_root = vim.fn.tempname()
 vim.fn.mkdir(mapping_root, 'p')
+local mapping_binary = mapping_root .. '/artifact'
+local mapping_file = assert(io.open(mapping_binary, 'wb'))
+mapping_file:write(string.char(
+  0xcf, 0xfa, 0xed, 0xfe,
+  0x0c, 0x00, 0x00, 0x01,
+  0x00, 0x00, 0x00, 0x00,
+  0x02, 0x00, 0x00, 0x00
+))
+mapping_file:close()
 
 local explorer = require('vv-explorer')
 explorer.setup({
@@ -105,6 +114,45 @@ test('多击映射和 ModeChanged 拖拽守卫实际挂到 panel buffer', functi
     end
   end
   assert(guarded, 'ModeChanged visual guard missing from explorer buffer')
+end)
+
+test('<CR>/l 聚焦二进制属性，o 才调用系统打开', function()
+  local Sys = require('vv-utils.sys')
+  local original_open_default = Sys.open_default
+  local system_opened
+  Sys.open_default = function(path) system_opened = path end
+
+  local ok, err = pcall(function()
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(explorer_buf))
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+    local enter = find_mapping('n', '<CR>')
+    assert(enter and enter.callback, '<CR> open mapping missing')
+    enter.callback()
+
+    local info_buf = vim.api.nvim_get_current_buf()
+    assert(info_buf ~= explorer_buf, '<CR> did not focus the content window')
+    assert(vim.b[info_buf].vv_explorer_binary_info == true,
+      '<CR> did not focus the binary metadata buffer')
+    assert(system_opened == nil, '<CR> incorrectly invoked the system opener')
+
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(explorer_buf))
+    local right = find_mapping('n', 'l')
+    assert(right and right.callback, 'l open mapping missing')
+    right.callback()
+    assert(vim.api.nvim_get_current_buf() == info_buf, 'l did not focus the binary metadata buffer')
+    assert(system_opened == nil, 'l incorrectly invoked the system opener')
+
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(explorer_buf))
+    local open = find_mapping('n', 'o')
+    assert(open and open.callback, 'o system_open mapping missing')
+    open.callback()
+    assert(vim.fs.normalize(system_opened) == vim.fs.normalize(mapping_binary),
+      'o did not invoke the system opener for the binary path')
+  end)
+
+  Sys.open_default = original_open_default
+  if not ok then error(err) end
 end)
 
 explorer.close()
@@ -173,6 +221,75 @@ test('preview listed buffer from another split does not re-add it to current spl
   assert(vim.wo[top].winbar ~= '', 'preview should keep the top split bufferline visible')
   assert(vim.wo[top].winbar:find('vv-explorer-preview-a.ts', 1, true), 'fixed tab a missing from winbar during preview')
   assert(not vim.wo[top].winbar:find('vv-explorer-preview-b.ts', 1, true), 'preview buffer b must not appear as a tab')
+end)
+
+test('extensionless binary uses an English metadata preview and releases its scratch buffer', function()
+  pcall(vim.cmd, 'silent! only')
+
+  local bufferline = require('vv-bufferline')
+  local State = require('vv-bufferline.state')
+  local Preview = require('vv-explorer.preview')
+
+  State.reset()
+  require('vv-bufferline.winbar_host').reset()
+  bufferline.setup()
+
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  local seed_path = tmpdir .. '/seed.txt'
+  local binary_path = tmpdir .. '/artifact'
+  local next_path = tmpdir .. '/next.txt'
+  vim.fn.writefile({ 'seed' }, seed_path)
+  vim.fn.writefile({ 'next' }, next_path)
+  local file = assert(io.open(binary_path, 'wb'))
+  file:write(string.char(
+    0xcf, 0xfa, 0xed, 0xfe,
+    0x0c, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00,
+    0x02, 0x00, 0x00, 0x00
+  ))
+  file:close()
+  vim.uv.fs_chmod(binary_path, 493)
+
+  vim.cmd('edit ' .. vim.fn.fnameescape(seed_path))
+  local main = vim.api.nvim_get_current_win()
+  vim.cmd('topleft vnew')
+  local explorer_win = vim.api.nvim_get_current_win()
+  vim.bo.filetype = 'vv-explorer'
+  Preview.remember_editor_win(main)
+
+  local state = {
+    win = explorer_win,
+    opts = { binary = { intercept = true, extensions = {} } },
+  }
+  Preview.preview_file(state, binary_path)
+
+  local info_buf = vim.api.nvim_win_get_buf(main)
+  local text = table.concat(vim.api.nvim_buf_get_lines(info_buf, 0, -1, false), '\n')
+  assert(vim.bo[info_buf].buftype == 'nofile', 'binary preview must use a nofile scratch buffer')
+  assert(vim.bo[info_buf].readonly and not vim.bo[info_buf].modifiable,
+    'binary preview must be explicitly read-only')
+  assert(vim.b[info_buf].vv_explorer_binary_info == true, 'binary preview ownership marker missing')
+  assert(text:find('Binary file', 1, true), 'binary preview English title missing')
+  assert(text:find('Type: Mach-O 64-bit executable', 1, true), 'binary preview type missing')
+  assert(text:find('Architecture: arm64', 1, true), 'binary preview architecture missing')
+  assert(text:find('Executable: Yes', 1, true), 'binary preview executable flag missing')
+  local highlighted = {}
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(info_buf, -1, 0, -1, { details = true })) do
+    highlighted[mark[4].hl_group] = true
+  end
+  assert(highlighted.VVUtilsFileInfoTitle and highlighted.VVUtilsFileInfoLabel,
+    'binary preview shared highlights missing')
+
+  Preview.preview_file(state, next_path)
+  local displayed_path = vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(main)))
+  assert(vim.uv.fs_realpath(displayed_path) == vim.uv.fs_realpath(next_path),
+    'text preview did not replace binary metadata: ' .. displayed_path)
+  assert(not vim.api.nvim_buf_is_valid(info_buf), 'replaced binary scratch buffer leaked')
+
+  vim.cmd('enew')
+  Preview.discard(state)
+  vim.fn.delete(tmpdir, 'rf')
 end)
 
 test('opening another file does not resurrect a buffer removed from the split (stale preview)', function()

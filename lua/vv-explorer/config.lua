@@ -20,8 +20,8 @@ local M = {}
 ---@field reveal string|false 展开到并高亮当前 buffer 对应文件的全局键位 @default '<leader>e'
 
 ---@class VVExplorerBinaryConfig
----@field intercept boolean 拦截二进制文件：不在 nvim 打开，改用系统默认程序 @default true
----@field extensions table<string, boolean> 视为二进制的扩展名集合（小写 key） @default { png = true, jpg = true, ... }
+---@field intercept boolean 拦截二进制文件：预览显示文件属性，`o`/`gx` 使用系统默认程序 @default true
+---@field extensions table<string, boolean> 内容探测的扩展名覆盖（小写 key，显式 false 可按文本处理） @default { png = true, jpg = true, ... }
 
 ---@class VVExplorerExecuteConfig
 ---@field enabled boolean 启用 `X` 执行光标文件 @default true

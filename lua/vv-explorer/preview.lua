@@ -1,7 +1,7 @@
 -- VSCode 风「单击预览」buffer 行为
 --   ① 树里光标移到文件 A → 主窗口自动打开 A 作为「动态预览」
 --   ② 光标继续移到文件 B → 删 A、打开 B（同一时刻最多一个动态预览）
---   ③ 用户按 <CR>/l/o 打开 → 当前预览升级为「固定」（清空追踪）
+--   ③ 用户按 <CR>/l 打开文本文件 → 当前预览升级为「固定」（清空追踪）
 --   ④ 用户在动态 buffer 里编辑 → 自动升级为固定（不能删用户改了的东西）
 --
 -- 边界（已处理）：
@@ -11,7 +11,9 @@
 --   • 旧预览被另一窗口共用 → 不删
 --   • 旧预览处于 modified → 不删
 
+local FilePolicy = require('vv-explorer.file_policy')
 local Window = require('vv-explorer.window')
+local Fs = require('vv-utils.fs')
 
 local M = {}
 
@@ -27,13 +29,13 @@ end
 M._preview = setmetatable({}, { __mode = 'k' })
 
 -- state -> winid。preview buffer 可能已经因其他 split 而 listed，此时需要
--- 让 vv-bufferline 按窗口跳过追踪，不能再靠全局 buflisted 表达 preview/fixed。
+-- 让 vv-bufferline 按窗口跳过追踪，不能再靠全局 buflisted 表达 preview/fixed
 M._preview_win = setmetatable({}, { __mode = 'k' })
 
 -- state -> cancel fn（debounce timer 清理，state gc 后自动释放引用）
 M._cancel = setmetatable({}, { __mode = 'k' })
 
--- tabpage -> winid。用于让 explorer 打开文件时优先进入最近聚焦过的编辑 split。
+-- tabpage -> winid。用于让 explorer 打开文件时优先进入最近聚焦过的编辑 split
 M._last_editor_win = {}
 
 -- 预览追踪是「buf + 所属窗口」一对，置空必须成对，避免只清一半留下野引用
@@ -131,12 +133,29 @@ end
 
 -- 必须限定在树所在 tabpage 内搜索。nvim_list_wins() 是跨所有 tab 的，
 -- 用户如果在 tab 1 开了 vv-explorer、在 tab 2 开别的窗口，预览会错把 tab 2
--- 的窗口当成 "main"，nvim_win_set_buf 会把预览内容推到不相关的 tab 里。
+-- 的窗口当成 "main"，nvim_win_set_buf 会把预览内容推到不相关的 tab 里
 ---@param tree_win integer
+---@param state? table
 ---@return integer? main_win
-function M.find_main_win(tree_win)
+function M.find_main_win(tree_win, state)
   if not vim.api.nvim_win_is_valid(tree_win) then return nil end
   local tab = vim.api.nvim_win_get_tabpage(tree_win)
+
+  -- binary info 使用 nofile scratch，不能通过 is_editor_win；只复用当前 state 已追踪的
+  -- preview window，避免把其它特殊窗口误判为编辑区
+  local preview_win = state and M._preview_win[state]
+  local preview_buf = state and M._preview[state]
+  if preview_win
+      and preview_buf
+      and preview_win ~= tree_win
+      and vim.api.nvim_win_is_valid(preview_win)
+      and vim.api.nvim_buf_is_valid(preview_buf)
+      and vim.api.nvim_win_get_buf(preview_win) == preview_buf
+      and vim.api.nvim_win_get_tabpage(preview_win) == tab
+      and vim.api.nvim_win_get_config(preview_win).relative == ''
+      and not vim.wo[preview_win].winfixbuf then
+    return preview_win
+  end
 
   local last = M._last_editor_win[tab]
   if last
@@ -216,39 +235,65 @@ local function mark_bufferline_preview(win, buf)
   end
 end
 
----@param path string
----@param opts table
-local function is_binary(path, opts)
-  local cfg = opts.binary
-  if not cfg or not cfg.intercept then return false end
-  local ext = path:match('%.([%w_]+)$')
-  return ext and cfg.extensions[ext:lower()] or false
+---@param info VVFsFileInfo
+---@param display_path string
+---@param abs string
+---@return integer
+local function create_binary_preview(info, display_path, abs)
+  local buf = vim.api.nvim_create_buf(false, true)
+
+  vim.api.nvim_set_option_value('buftype', 'nofile', { buf = buf })
+  vim.api.nvim_set_option_value('swapfile', false, { buf = buf })
+  vim.api.nvim_set_option_value('bufhidden', 'wipe', { buf = buf })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, Fs.file_info_lines(info, {
+    display_path = display_path,
+  }))
+
+  vim.api.nvim_set_option_value('modifiable', false, { buf = buf })
+  vim.api.nvim_set_option_value('readonly', true, { buf = buf })
+  vim.api.nvim_set_option_value('filetype', 'vv-explorer-info', { buf = buf })
+
+  Fs.highlight_file_info(buf)
+
+  vim.b[buf].vv_explorer_binary_info = true
+  vim.b[buf].vv_explorer_binary_path = abs
+
+  return buf
 end
 
 ---@param state table
 ---@param path string
 function M.preview_file(state, path)
   if vim.fn.filereadable(path) == 0 then return end
-  if is_binary(path, state.opts) then return end
   local abs = vim.fs.normalize(vim.fn.fnamemodify(path, ':p'))
-  local main = M.find_main_win(state.win)
+  local info = FilePolicy.binary_info(abs, state.opts.binary)
+  local main = M.find_main_win(state.win, state)
   if not main then return end
   if not vim.api.nvim_win_is_valid(main) then return end
 
   local cur_buf = vim.api.nvim_win_get_buf(main)
   local cur_buf_name = vim.fs.normalize(vim.api.nvim_buf_get_name(cur_buf))
-  if cur_buf_name == abs then return end
+  local cur_binary_path = vim.b[cur_buf].vv_explorer_binary_path
+  if info and cur_binary_path == abs then return end
+  if not info and cur_buf_name == abs then return end
 
   local old = M._preview[state]
   local old_win = M._preview_win[state]
 
-  -- 用 bufadd + bufload，保留焦点在树窗口；窗口换 buf 不动焦点
-  local target = vim.fn.bufadd(path)
-  if target == 0 then return end
-  -- 固定与否是 window-local 语义：同一个 buf 可能在下方 split 是固定的，
-  -- 但在上方 split 已被 <leader>bd 从分组移除，此时 explorer preview 不应重新加入。
-  local is_fixed = is_fixed_for_win(main, target)
-  local was_listed = vim.bo[target].buflisted
+  local target
+  local is_fixed = false
+  local was_listed = false
+  if info then
+    target = create_binary_preview(info, path, abs)
+  else
+    -- 用 bufadd + bufload，保留焦点在树窗口；窗口换 buf 不动焦点
+    target = vim.fn.bufadd(path)
+    if target == 0 then return end
+    -- 固定与否是 window-local 语义：同一个 buf 可能在下方 split 是固定的，
+    -- 但在上方 split 已被 <leader>bd 从分组移除，此时 explorer preview 不应重新加入
+    is_fixed = is_fixed_for_win(main, target)
+    was_listed = vim.bo[target].buflisted
+  end
 
   if old and (old ~= target or is_fixed) then
     clear_bufferline_preview(old_win, old, false)
@@ -268,6 +313,9 @@ function M.preview_file(state, path)
   local ok = pcall(vim.api.nvim_win_set_buf, main, target)
   if not ok then
     clear_bufferline_preview(main, target, false)
+    if info and vim.api.nvim_buf_is_valid(target) then
+      pcall(vim.api.nvim_buf_delete, target, { force = true })
+    end
     return
   end
 
@@ -312,7 +360,7 @@ function M.preview_file(state, path)
 end
 
 -- 丢弃一个预览 buffer：清掉 bufferline 预览态（不升级、不复原），并在它确属一次性
--- 预览（未改、未 list、别处不可见）时清理掉，避免遗留隐藏 buffer。
+-- 预览（未改、未 list、别处不可见）时清理掉，避免遗留隐藏 buffer
 ---@param state table
 ---@param buf integer?
 ---@param win integer?
@@ -326,17 +374,17 @@ local function drop_preview_buf(state, buf, win)
   end
 end
 
--- 丢弃当前预览：不升级、不复原。用于「没有主窗 / 在别处（分屏）打开」的场景。
+-- 丢弃当前预览：不升级、不复原。用于「没有主窗 / 在别处（分屏）打开」的场景
 ---@param state table
 function M.discard(state)
   drop_preview_buf(state, M._preview[state], M._preview_win[state])
   reset_preview_state(state)
 end
 
--- 结算一次「在 win 里显式打开文件」：win 当前显示的 buffer 即提交目标。
+-- 结算一次「在 win 里显式打开文件」：win 当前显示的 buffer 即提交目标
 -- 必须在 win 已经切到目标文件「之后」调用——这样：
 --   ① 指向其他文件的陈旧预览被丢弃且不会被 render 复原（win 已不显示它）；
---   ② 已从分组删除（removed）的 buffer 不会因「顺手 promote 上一个预览」而复活。
+--   ② 已从分组删除（removed）的 buffer 不会因「顺手 promote 上一个预览」而复活
 ---@param state table
 ---@param win integer
 function M.commit(state, win)
@@ -362,15 +410,15 @@ function M.commit(state, win)
 end
 
 -- path_set 的 key 由 crud.cleanup_deleted_bufs 用 Fs.realpath 解析为真实路径并去尾斜杠；
--- 这里把预览 buffer name 同样 normalize + 去尾斜杠后比对，口径一致才不会漏命中。
+-- 这里把预览 buffer name 同样 normalize + 去尾斜杠后比对，口径一致才不会漏命中
 ---@param state table
 ---@param path_set table<string, boolean>
 function M.clear_if_deleted(state, path_set)
   local buf = M._preview[state]
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local raw = vim.api.nvim_buf_get_name(buf)
+  local raw = vim.b[buf].vv_explorer_binary_path or vim.api.nvim_buf_get_name(buf)
   if raw == '' then return end
-  local name = vim.fs.normalize(raw):gsub('/+$', '')
+  local name = Fs.realpath(raw):gsub('/+$', '')
   if path_set[name] then
     clear_bufferline_preview(M._preview_win[state], buf, false)
     reset_preview_state(state)
@@ -407,7 +455,7 @@ function M.attach(state)
 
   -- BufModifiedSet 在 0.13 中被移除，原因是它只在 redraw 时对当前 buffer 触发，
   -- 导致 :wa 写入非当前 buffer 时事件延迟/丢失。0.13 改用 OptionSet modified，
-  -- 触发更及时且对所有 buffer 一致。
+  -- 触发更及时且对所有 buffer 一致
   -- 见 https://github.com/neovim/neovim/pull/35610 (merged 2026-04-27, milestone 0.13)
   if vim.fn.exists('##BufModifiedSet') == 1 then
     vim.api.nvim_create_autocmd('BufModifiedSet', {

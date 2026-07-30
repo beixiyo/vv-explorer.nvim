@@ -51,12 +51,19 @@ function L.attach(M, H)
     Render.render(state)
   end
 
+  local function focus_binary_info(state, node)
+    Preview.preview_file(state, node.path)
+    local main = Preview.find_main_win(state.win, state)
+    if main and vim.api.nvim_win_is_valid(main) then
+      vim.api.nvim_set_current_win(main)
+    end
+  end
+
   local function open_file(state, node)
     if H.is_binary(node.path, state.opts) then
-      require('vv-utils.sys').open_default(node.path)
-      return
+      return focus_binary_info(state, node)
     end
-    local main = Preview.find_main_win(state.win)
+    local main = Preview.find_main_win(state.win, state)
     if not main then
       Preview.discard(state)
       H.open_in_explorer_split(state, 'rightbelow vsplit', node.path)
@@ -132,12 +139,11 @@ function L.attach(M, H)
     local node = H.node_under_cursor(state)
     if not node or node.is_dir then return end
     if H.is_binary(node.path, state.opts) then
-      require('vv-utils.sys').open_default(node.path)
-      return
+      return focus_binary_info(state, node)
     end
     -- 在分屏（新窗口）打开 → 丢弃 main 里的悬停预览，不顺手 promote 旧预览
+    local main = Preview.find_main_win(state.win, state)
     Preview.discard(state)
-    local main = Preview.find_main_win(state.win)
     if main and vim.api.nvim_win_is_valid(main) then
       vim.api.nvim_set_current_win(main)
       Preview.prepare_main_win(main)
@@ -268,7 +274,7 @@ function L.attach(M, H)
 
   local function scroll_preview(state, direction)
     if not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
-    local target = Preview.find_main_win(state.win)
+    local target = Preview.find_main_win(state.win, state)
     if not target or not vim.api.nvim_win_is_valid(target) then return end
     Scroll.window(target, direction * SCROLL_LINES)
   end

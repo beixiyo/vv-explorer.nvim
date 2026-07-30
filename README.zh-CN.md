@@ -87,8 +87,8 @@ opts = {
   },
 
   binary = {
-    intercept = true,          -- 拦截二进制文件：不在 nvim 打开，改用系统默认程序
-    extensions = {             -- 视为二进制的扩展名集合（小写 key）
+    intercept = true,          -- 预览文件属性；o/gx 使用系统默认程序
+    extensions = {             -- 内容探测的扩展名覆盖（小写 key）
       -- 默认含：图片（png/jpg/gif/webp/…）、视频（mp4/mkv/mov/…）、
       -- 音频（mp3/wav/flac/…）、压缩包（zip/tar/gz/7z/…）、
       -- 编译产物（exe/dll/so/o/…）、字体（ttf/otf/woff/…）、
@@ -137,7 +137,7 @@ opts = {
 
 ### 二进制文件拦截
 
-默认开启。`<CR>`/`l`/`<C-x>`/`<C-v>` 遇到二进制文件时，不在 nvim 内 `:edit`，改用系统默认程序打开；预览（`preview = true`）也会跳过二进制文件
+`<CR>` / `l` 和 `<C-x>` / `<C-v>` 只聚焦该视图，不额外创建分屏；`o` / `gx` 才使用系统默认程序打开文件
 
 ```lua
 -- 放行图片（未来 nvim 原生支持图片预览时）

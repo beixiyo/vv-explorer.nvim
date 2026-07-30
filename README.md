@@ -87,8 +87,8 @@ opts = {
   },
 
   binary = {
-    intercept = true,          -- Open binary files with the system default application
-    extensions = {             -- Extensions treated as binary (lowercase keys)
+    intercept = true,          -- Preview metadata; use o/gx for the system application
+    extensions = {             -- Extension overrides for content detection
       -- Defaults include images (png/jpg/gif/webp/…), videos (mp4/mkv/mov/…),
       -- audio (mp3/wav/flac/…), archives (zip/tar/gz/7z/…),
       -- build artifacts (exe/dll/so/o/…), fonts (ttf/otf/woff/…),
@@ -137,7 +137,7 @@ Set `trash = false` to disable trash completely
 
 ### Binary-file interception
 
-Enabled by default. When `<CR>`/`l`/`<C-x>`/`<C-v>` encounters a binary file, it opens with the system default application instead of `:edit` in Neovim. Preview also skips binary files
+`<CR>` / `l` and `<C-x>` / `<C-v>` focus that view without creating another split. Use `o` / `gx` to open the file with the system default application
 
 ```lua
 -- Allow images (for future native Neovim image preview support)

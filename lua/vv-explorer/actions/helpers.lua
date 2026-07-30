@@ -2,6 +2,7 @@
 
 local Render = require('vv-explorer.render')
 local Tree = require('vv-explorer.tree')
+local FilePolicy = require('vv-explorer.file_policy')
 local Fs = require('vv-utils.fs')
 
 local H = {}
@@ -170,10 +171,7 @@ end
 ---@param opts VVExplorerConfig
 ---@return boolean
 function H.is_binary(path, opts)
-  local cfg = opts.binary
-  if not cfg or not cfg.intercept then return false end
-  local ext = path:match('%.([%w_]+)$')
-  return ext and cfg.extensions[ext:lower()] or false
+  return FilePolicy.is_binary(path, opts.binary)
 end
 
 ---@param state table
