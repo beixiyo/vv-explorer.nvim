@@ -42,6 +42,60 @@ vim.cmd.edit(vim.fn.fnameescape(target))
 local target_buf = vim.api.nvim_get_current_buf()
 
 local explorer = require('vv-explorer')
+
+vim.keymap.set('n', '<F28>', '<cmd>let g:vv_explorer_previous_map = 1<cr>', {
+  desc = 'fixture: previous mapping',
+})
+explorer.setup({
+  persist_open = false,
+  preview = false,
+  watch = false,
+  follow_file = false,
+  git = false,
+  diagnostics = false,
+  trash = false,
+  global_mappings = {
+    toggle = '<F28>',
+    reveal = '<F29>',
+  },
+})
+assert(vim.fn.maparg('<F28>', 'n', false, true).desc == 'vv-explorer: toggle',
+  'setup should install the configured toggle mapping')
+
+explorer.setup({
+  persist_open = false,
+  preview = false,
+  watch = false,
+  follow_file = false,
+  git = false,
+  diagnostics = false,
+  trash = false,
+  global_mappings = {
+    toggle = '<F30>',
+    reveal = '<F31>',
+  },
+})
+assert(vim.fn.maparg('<F28>', 'n', false, true).desc == 'fixture: previous mapping',
+  'reconfiguring should restore the mapping that existed before setup')
+assert(vim.fn.maparg('<F29>', 'n') == '', 'reconfiguring should remove an obsolete plugin mapping')
+
+vim.keymap.set('n', '<F30>', '<cmd>let g:vv_explorer_user_override = 1<cr>', {
+  desc = 'fixture: user override',
+})
+explorer.setup({
+  persist_open = false,
+  preview = false,
+  watch = false,
+  follow_file = false,
+  git = false,
+  diagnostics = false,
+  trash = false,
+  global_mappings = false,
+})
+assert(vim.fn.maparg('<F30>', 'n', false, true).desc == 'fixture: user override',
+  'reconfiguring must preserve a mapping replaced by the user after setup')
+assert(vim.fn.maparg('<F31>', 'n') == '', 'disabling global mappings should remove plugin-owned mappings')
+
 explorer.setup({
   state = handle,
   width = 33,

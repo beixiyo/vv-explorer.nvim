@@ -18,6 +18,51 @@ local Preview = require('vv-explorer.preview')
 
 local M = {}
 
+local owned_global_mappings = {}
+
+---@param lhs string
+---@return table?
+local function get_global_mapping(lhs)
+  local target = vim.fn.keytrans(vim.keycode(lhs))
+  for _, mapping in ipairs(vim.api.nvim_get_keymap('n')) do
+    if vim.fn.keytrans(vim.keycode(mapping.lhs)) == target then return mapping end
+  end
+end
+
+---@param lhs string
+---@param mapping table?
+local function restore_global_mapping(lhs, mapping)
+  if not mapping then
+    pcall(vim.api.nvim_del_keymap, 'n', lhs)
+    return
+  end
+
+  local opts = {
+    noremap = mapping.noremap == 1,
+    silent = mapping.silent == 1,
+    expr = mapping.expr == 1,
+    nowait = mapping.nowait == 1,
+    script = mapping.script == 1,
+    desc = mapping.desc,
+    replace_keycodes = mapping.replace_keycodes == 1,
+  }
+  if mapping.callback then opts.callback = mapping.callback end
+  vim.api.nvim_set_keymap('n', lhs, mapping.rhs or '', opts)
+end
+
+local function clear_global_mappings()
+  for lhs, owned in pairs(owned_global_mappings) do
+    local current = get_global_mapping(lhs)
+    if current
+        and current.callback == owned.callback
+        and current.desc == owned.desc
+    then
+      restore_global_mapping(lhs, owned.previous)
+    end
+  end
+  owned_global_mappings = {}
+end
+
 local function register_highlights()
   require('vv-utils.git').register_hl()
 
@@ -54,18 +99,38 @@ end
 
 ---@param mappings VVExplorerGlobalMappings|false
 local function register_global_mappings(mappings)
+  clear_global_mappings()
   if not mappings then return end
-  if mappings.toggle then
-    vim.keymap.set('n', mappings.toggle, '<cmd>VVExplorerToggle<cr>', {
+
+  local definitions = {
+    {
+      lhs = mappings.toggle,
+      callback = function() Panel.toggle() end,
       desc = 'vv-explorer: toggle',
-      silent = true,
-    })
-  end
-  if mappings.reveal then
-    vim.keymap.set('n', mappings.reveal, '<cmd>VVExplorerReveal<cr>', {
+    },
+    {
+      lhs = mappings.reveal,
+      callback = function() Panel.reveal() end,
       desc = 'vv-explorer: reveal current file',
-      silent = true,
-    })
+    },
+  }
+
+  for _, definition in ipairs(definitions) do
+    if definition.lhs then
+      local previous = owned_global_mappings[definition.lhs]
+          and owned_global_mappings[definition.lhs].previous
+          or get_global_mapping(definition.lhs)
+      vim.keymap.set('n', definition.lhs, definition.callback, {
+        desc = definition.desc,
+        silent = true,
+      })
+
+      owned_global_mappings[definition.lhs] = {
+        callback = definition.callback,
+        desc = definition.desc,
+        previous = previous,
+      }
+    end
   end
 end
 
