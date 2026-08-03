@@ -7,6 +7,38 @@ local Policy = require('vv-explorer.filter.policy')
 
 local M = {}
 
+local function cancel_bag()
+  local cancelled = false
+  local producers = {}
+
+  local function add(producer)
+    if not producer then return end
+    if cancelled then
+      pcall(producer.kill, producer, 'sigterm')
+    else
+      producers[producer] = true
+    end
+  end
+
+  local function done(producer)
+    producers[producer] = nil
+  end
+
+  local function cancel()
+    if cancelled then return end
+    cancelled = true
+    for producer in pairs(producers) do pcall(producer.kill, producer, 'sigterm') end
+    producers = {}
+  end
+
+  return {
+    add = add,
+    done = done,
+    cancel = cancel,
+    is_cancelled = function() return cancelled end,
+  }
+end
+
 ---@param line string
 ---@param scope_prefix string
 ---@return string
@@ -44,16 +76,43 @@ local function parse_git_paths(output_root, stdout, tracked, scope_prefix)
 end
 
 ---@param command string[]
+---@param system_opts table
+---@param bag table
+---@param on_error fun(error:any)
 ---@param callback fun(result: vim.SystemCompleted)
-local function run(command, callback)
-  vim.system(command, { text = false }, vim.schedule_wrap(callback))
+---@return boolean started
+local function run(command, system_opts, bag, on_error, callback)
+  if bag.is_cancelled() then return false end
+
+  local producer
+  local completed = false
+  local ok, result = pcall(vim.system, command, system_opts, function(result)
+    completed = true
+    if producer then bag.done(producer) end
+    vim.schedule(function()
+      if bag.is_cancelled() then return end
+      callback(result)
+    end)
+  end)
+
+  if not ok then
+    on_error(result)
+    return false
+  end
+
+  producer = result
+  if not completed then bag.add(producer) end
+  return true
 end
 
 ---@param command_root string
 ---@param output_root string
 ---@param relative_cwd string
+---@param bag table
+---@param on_error fun(error:any)
 ---@param callback fun(entries: VVExplorerFilterIndexEntry[])
-local function git_worktree_entries(command_root, output_root, relative_cwd, callback)
+---@return boolean started
+local function git_worktree_entries(command_root, output_root, relative_cwd, bag, on_error, callback)
   local entries = {}
   local pending = 2
 
@@ -74,22 +133,30 @@ local function git_worktree_entries(command_root, output_root, relative_cwd, cal
     vim.list_extend(untracked, { '--', relative_cwd })
   end
 
-  run(tracked, function(result) collect(result, true) end)
-  run(untracked, function(result) collect(result, false) end)
+  if not run(tracked, { text = false }, bag, on_error, function(result)
+    collect(result, true)
+  end) then return false end
+
+  return run(untracked, { text = false }, bag, on_error, function(result)
+    collect(result, false)
+  end)
 end
 
 ---@param command_root string
 ---@param output_root string
 ---@param relative_cwd string
+---@param bag table
+---@param on_error fun(error:any)
 ---@param callback fun(entries: VVExplorerFilterIndexEntry[], nested_repos: string[])
-local function git_ignored_entries(command_root, output_root, relative_cwd, callback)
+---@return boolean started
+local function git_ignored_entries(command_root, output_root, relative_cwd, bag, on_error, callback)
   local command = {
     'git', '-C', command_root, 'ls-files', '-z',
     '--others', '--ignored', '--exclude-standard', '--directory', '--full-name',
   }
   if relative_cwd ~= '' then vim.list_extend(command, { '--', relative_cwd }) end
 
-  run(command, function(result)
+  return run(command, { text = false }, bag, on_error, function(result)
     local entries = {}
     local nested_repos = {}
     if result.code == 0 and result.stdout then
@@ -129,19 +196,22 @@ end
 ---@param cwd string
 ---@param git_root string
 ---@param opts VVExplorerFilterIndexOpts
+---@param bag table
+---@param on_error fun(error:any)
 ---@param on_done fun(paths:string[], is_dir_map:table<string, boolean>)
-local function build_git(cwd, git_root, opts, on_done)
+---@return boolean started
+local function build_git(cwd, git_root, opts, bag, on_error, on_done)
   local real_cwd = vim.uv.fs_realpath(cwd) or cwd
   local relative_cwd = git_root ~= real_cwd and real_cwd:sub(#git_root + 2) or ''
   local output_root = cwd
 
-  git_worktree_entries(git_root, output_root, relative_cwd, function(entries)
+  return git_worktree_entries(git_root, output_root, relative_cwd, bag, on_error, function(entries)
     if not opts.show_ignored then
       finish(cwd, opts, entries, on_done)
       return
     end
 
-    git_ignored_entries(git_root, output_root, relative_cwd, function(ignored, nested_repos)
+    git_ignored_entries(git_root, output_root, relative_cwd, bag, on_error, function(ignored, nested_repos)
       vim.list_extend(entries, ignored)
       if #nested_repos == 0 then
         finish(cwd, opts, entries, on_done)
@@ -150,20 +220,21 @@ local function build_git(cwd, git_root, opts, on_done)
 
       local pending = #nested_repos
       for _, repo_dir in ipairs(nested_repos) do
-        git_worktree_entries(repo_dir, repo_dir, '', function(nested)
+        if not git_worktree_entries(repo_dir, repo_dir, '', bag, on_error, function(nested)
           vim.list_extend(entries, nested)
           pending = pending - 1
           if pending == 0 then finish(cwd, opts, entries, on_done) end
-        end)
+        end) then return end
       end
     end)
   end)
 end
 
 ---@param cwd string
----@param opts {hidden?:boolean, show_ignored?:boolean, custom?:string[]}
+---@param opts {hidden?:boolean, show_ignored?:boolean, custom?:string[], on_error?:fun(error:string)}
 ---@param on_done fun(paths:string[], is_dir_map:table<string, boolean>)
 ---@return boolean ok
+---@return fun() cancel
 function M.build(cwd, opts, on_done)
   opts = opts or {}
   ---@type VVExplorerFilterIndexOpts
@@ -173,12 +244,38 @@ function M.build(cwd, opts, on_done)
     custom = opts.custom or {},
   }
   local git_root = require('vv-utils.git').root(cwd) or ''
+  local bag = cancel_bag()
+  local failed = false
+  local returned = false
+
+  local function fail_pipeline(err)
+    if failed or bag.is_cancelled() then return end
+    failed = true
+    bag.cancel()
+
+    local message = tostring(err)
+    pcall(vim.notify, 'vv-explorer: filter index failed\n' .. message, vim.log.levels.ERROR, {
+      title = 'vv-explorer',
+    })
+    -- 同步失败由 build() 的 ok=false 交给调用方处理；返回后的动态阶段
+    -- 必须主动结束调用方持有的 request，避免永久停在 building
+    if returned and opts.on_error then opts.on_error(message) end
+  end
+
+  local function start_pipeline(callback)
+    local ok, err = xpcall(callback, debug.traceback)
+    if not ok then fail_pipeline(err) end
+    return ok and not failed
+  end
 
   -- git ls-files 遵循 gitignore 规则；tracked/untracked 分开读取，使 hidden
   -- 策略仍可放行被跟踪的 dotfile 及其父目录
   if git_root ~= '' then
-    build_git(cwd, git_root, resolved_opts, on_done)
-    return true
+    local ok = start_pipeline(function()
+      build_git(cwd, git_root, resolved_opts, bag, fail_pipeline, on_done)
+    end)
+    returned = true
+    return ok, bag.cancel
   end
 
   if vim.fn.executable('fd') ~= 1 then
@@ -191,7 +288,7 @@ function M.build(cwd, opts, on_done)
       vim.log.levels.WARN,
       { title = 'vv-explorer' }
     )
-    return false
+    return false, bag.cancel
   end
 
   local command = { 'fd', '--type', 'f', '--type', 'd' }
@@ -205,22 +302,25 @@ function M.build(cwd, opts, on_done)
   end
   command[#command + 1] = '.'
 
-  vim.system(command, { text = true, cwd = cwd }, vim.schedule_wrap(function(result)
-    local entries = {}
-    if result.code == 0 and result.stdout then
-      for line in result.stdout:gmatch('[^\n]+') do
-        local directory = line:sub(-1) == '/'
-        if directory then line = line:sub(1, -2) end
-        entries[#entries + 1] = {
-          path = vim.fs.joinpath(cwd, line),
-          tracked = false,
-          directory = directory,
-        }
+  local ok = start_pipeline(function()
+    run(command, { text = true, cwd = cwd }, bag, fail_pipeline, function(result)
+      local entries = {}
+      if result.code == 0 and result.stdout then
+        for line in result.stdout:gmatch('[^\n]+') do
+          local directory = line:sub(-1) == '/'
+          if directory then line = line:sub(1, -2) end
+          entries[#entries + 1] = {
+            path = vim.fs.joinpath(cwd, line),
+            tracked = false,
+            directory = directory,
+          }
+        end
       end
-    end
-    finish(cwd, resolved_opts, entries, on_done)
-  end))
-  return true
+      finish(cwd, resolved_opts, entries, on_done)
+    end)
+  end)
+  returned = true
+  return ok, bag.cancel
 end
 
 ---@class VVExplorerFilterIndexOpts

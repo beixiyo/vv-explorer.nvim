@@ -7,6 +7,7 @@
 --   `--directory` 让 git 不递归进 ignored 目录，20ms 拿到全量 ignored
 
 local UGit = require('vv-utils.git')
+local Async = require('vv-utils.async')
 local Timer = require('vv-utils.timer')
 
 local M = {}
@@ -15,7 +16,14 @@ local DEBOUNCE_MS = 200
 
 ---@param state table
 function M.attach(state)
-  state.git = state.git or {}
+  if state.git then
+    for _, cancel in ipairs(state.git._cancels or {}) do pcall(cancel) end
+    if state.git._scope then state.git._scope:dispose() end
+  end
+  state.git = {}
+  local git_state = state.git
+  local request_scope = Async.scope()
+  git_state._scope = request_scope
   state.git.status_map = state.git.status_map or {}
   state.git.is_ignored = state.git.is_ignored or function() return false end
   state.git.is_tracked = state.git.is_tracked or function() return false end
@@ -27,9 +35,17 @@ function M.attach(state)
   end
 
   -- status（不含 --ignored）：只拿 modified/added/untracked 等状态标记
-  local function run_status(after)
-    UGit.index(state.root.path, function(idx)
-      if not state.git then return end -- detach 后丢弃在途结果，不复活孤儿 state.git
+  local function begin(key)
+    return request_scope:begin({ key = key, cancel_previous = true })
+  end
+
+  local function run_status(after, request, root)
+    request = request or begin('status')
+    root = root or state.root.path
+    if not request:is_current() then return end
+    local cancel = UGit.index(root, function(idx)
+      local current = request:finish()
+      if not current or state.git ~= git_state or state.root.path ~= root then return end
       if idx then
         state.git.status_map = idx.status_map
       else
@@ -38,12 +54,17 @@ function M.attach(state)
       rerender()
       if after then after() end
     end, { ignored = false, scope = true })
+    request:set_cancel(cancel)
   end
 
   -- tracked：只读 .git/index，毫秒级
-  local function run_tracked()
-    UGit.tracked(state.root.path, function(t)
-      if not state.git then return end -- 同上：detach 后短路
+  local function run_tracked(request, root)
+    request = request or begin('tracked')
+    root = root or state.root.path
+    if not request:is_current() then return end
+    local cancel = UGit.tracked(root, function(t)
+      local current = request:finish()
+      if not current or state.git ~= git_state or state.root.path ~= root then return end
       if t then
         state.git.is_tracked = t.is_tracked
       else
@@ -51,15 +72,21 @@ function M.attach(state)
       end
       rerender()
     end, { scope = true })
+    request:set_cancel(cancel)
   end
 
   -- ignored：ls-files --others --ignored --directory，不递归进 ignored 目录
-  local function run_ignored()
-    UGit.ignored_entries(state.root.path, function(ifiles, idirs)
-      if not state.git then return end -- 同上：detach 后短路
+  local function run_ignored(request, root)
+    request = request or begin('ignored')
+    root = root or state.root.path
+    if not request:is_current() then return end
+    local cancel = UGit.ignored_entries(root, function(ifiles, idirs)
+      local current = request:finish()
+      if not current or state.git ~= git_state or state.root.path ~= root then return end
       state.git.is_ignored = UGit.make_is_ignored(ifiles, idirs)
       rerender()
     end, { scope = true })
+    request:set_cancel(cancel)
   end
 
   -- 三条线各自 debounce（复用 vv-utils.timer.debounce：内部 stop+restart + schedule_wrap）
@@ -70,10 +97,11 @@ function M.attach(state)
   state.git._cancels = { cancel_status, cancel_tracked, cancel_ignored }
 
   state.git.refresh = function(after)
-    if not state.git then return end
-    refresh_status(after)
-    refresh_tracked()
-    refresh_ignored()
+    if state.git ~= git_state then return end
+    local root = state.root.path
+    refresh_status(after, begin('status'), root)
+    refresh_tracked(begin('tracked'), root)
+    refresh_ignored(begin('ignored'), root)
   end
 
   -- 外部 git 状态变更的刷新触发器（watch.lua 的 fs_event 只感知工作树文件变化，
@@ -109,6 +137,7 @@ function M.detach(state)
   for _, cancel in ipairs(state.git._cancels or {}) do
     pcall(cancel)
   end
+  if state.git._scope then state.git._scope:dispose() end
   state.git = nil
 end
 

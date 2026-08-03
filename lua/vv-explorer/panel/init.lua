@@ -60,6 +60,7 @@ end
 
 local function on_buf_wiped()
   if not state then return end
+  pcall(Actions.invalidate_filter_index, state)
   pcall(Watch.detach, state)
   pcall(Preview.detach, state)
   pcall(Git.detach, state)

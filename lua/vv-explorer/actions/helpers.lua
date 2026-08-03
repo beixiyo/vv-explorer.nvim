@@ -157,14 +157,15 @@ H.EMPTY_MATCHED = { abs = {}, rels = {}, positions = {}, total_count = 0 }
 ---@param state table
 function H.invalidate_filter_index(state)
   local f = state.filter
+
   if not f then return end
+  if f.index_scope then f.index_scope:cancel() end
+
   f.index = nil
   f.index_rels = nil
   f.index_root = nil
   f.is_dir_map = nil
   f.index_building = false
-  -- bump generation：放弃任何在途异步构建，使其回调命中 stale 检查后被丢弃
-  f.index_gen = (f.index_gen or 0) + 1
 end
 
 ---@param path string

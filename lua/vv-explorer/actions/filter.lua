@@ -5,6 +5,7 @@ local Preview = require('vv-explorer.preview')
 local Filter = require('vv-explorer.filter')
 local Prompt = require('vv-explorer.prompt')
 local Tree = require('vv-explorer.tree')
+local Async = require('vv-utils.async')
 
 local L = {}
 
@@ -154,21 +155,30 @@ function L.attach(M, H)
     if f.index or f.index_building then return true end
 
     f.index_building = true
-    f.index_root = state.root.path
-    -- 用 generation token 标记本次构建：build_index 是异步的（vim.system/git ls-files），
-    -- 慢构建可能在切根后才回调，把旧 root 的绝对路径写进新 root 的 f.index 并触发错误
-    -- refilter。任何 invalidate_filter_index 都会 bump f.index_gen，使在途旧构建被丢弃
-    f.index_gen = (f.index_gen or 0) + 1
+    local root_path = state.root.path
+    f.index_root = root_path
+    f.index_scope = f.index_scope or Async.scope({ cancel_previous = true })
 
-    local my_gen = f.index_gen
-    local ok = Filter.build_index(state.root.path, {
+    local request = f.index_scope:begin({ key = 'build' })
+    local ok, cancel = Filter.build_index(root_path, {
       hidden = state.opts.hidden,
       show_ignored = state.opts.git and state.opts.git.show_ignored,
       custom = state.opts.filter and state.opts.filter.custom,
+
+      on_error = function()
+        if not request:dispose() then return end
+        if not state.filter or state.filter ~= f then return end
+        if f.index_root ~= root_path or state.root.path ~= root_path then return end
+
+        f.index_building = false
+        f.index_root = nil
+        M.clear_filter(state)
+      end,
     }, function(paths, is_dir_map)
       -- 更新的构建/根已取代本次回调 → 丢弃陈旧结果，绝不污染当前 root 的索引
-      if not state.filter or state.filter ~= f or f.index_gen ~= my_gen then return end
-      if f.index_root ~= state.root.path then return end
+      if not request:finish() then return end
+      if not state.filter or state.filter ~= f then return end
+      if f.index_root ~= root_path or state.root.path ~= root_path then return end
 
       f.index = paths
       f.is_dir_map = is_dir_map
@@ -177,7 +187,11 @@ function L.attach(M, H)
 
       if f.active then refilter(state) end
     end)
+
+    request:set_cancel(cancel)
+
     if not ok then
+      request:cancel()
       f.index_building = false
       f.index_root = nil
       M.clear_filter(state)
@@ -214,6 +228,7 @@ function L.attach(M, H)
     if not state.filter or not state.filter.active then return end
 
     state.filter.active = false
+    if state.filter.index_building then H.invalidate_filter_index(state) end
     -- 连带关掉浮窗（幂等）：close() 不会回调 on_cancel，无递归风险
     if state.filter.prompt then
       pcall(state.filter.prompt.close)

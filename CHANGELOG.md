@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 - 2026-08-03
+
+### Fixed
+
+- **过滤索引生命周期**：`fd`、`git ls-files` 及动态发现的嵌套仓库扫描均绑定 filter request scope；关闭过滤、切换根目录或销毁面板会取消仍在运行的 producer
+- **Git 状态刷新**：status、tracked、ignored 三路索引各自保留请求身份与 root 快照；防抖期间的 A→B→A 切根、重新 attach 或 detach 不会让旧结果覆盖当前状态
+- **索引启动失败**：多 producer 管道构建失败时取消已经启动的进程
+
 ## 0.3.1 - 2026-07-30
 
 ### Changed
