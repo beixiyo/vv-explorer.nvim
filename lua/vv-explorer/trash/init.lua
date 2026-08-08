@@ -49,8 +49,9 @@ function M.empty()
 end
 
 ---@param callback fun(bytes:integer)
+---@return VVFsDirScanHandle? 没有活动 store 时为 nil；调用方负责在自己的资源释放时取消
 function M.scan_size(callback)
-  if active_store then active_store:scan_size(callback) end
+  if active_store then return active_store:scan_size(callback) end
 end
 
 ---@param state table?

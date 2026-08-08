@@ -23,6 +23,12 @@ local M = {}
 ---@field intercept boolean 拦截二进制文件：预览显示文件属性，`o`/`gx` 使用系统默认程序 @default true
 ---@field extensions table<string, boolean> 内容探测的扩展名覆盖（小写 key，显式 false 可按文本处理） @default { png = true, jpg = true, ... }
 
+---@class VVExplorerDirectoryPreviewConfig
+---@field enabled boolean 光标停在目录上时预览目录属性（直接子项数量、修改时间） @default true
+---@field recursive boolean 自动递归统计总大小与文件数；分片进行，光标移开即取消 @default true
+---@field max_entries integer 递归统计的 entry 上限，达到后显示为「至少」而不是最终值 @default 200000
+---@field budget_ms integer 递归统计单片最长占用主线程的毫秒数 @default 8
+
 ---@class VVExplorerExecuteConfig
 ---@field enabled boolean 启用 `X` 执行光标文件 @default true
 ---@field confirm boolean 执行前弹确认框（显示将运行的命令，安全） @default true
@@ -54,6 +60,7 @@ local M = {}
 ---@field git VVExplorerGitConfig|boolean @default { enabled = true, show_ignored = false }
 ---@field diagnostics VVExplorerDiagnosticsConfig|boolean @default { enabled = true }
 ---@field binary VVExplorerBinaryConfig @default { intercept = true, extensions = { ... } }
+---@field directory_preview VVExplorerDirectoryPreviewConfig|boolean 目录属性预览；设 false 时光标停在目录上不改变主窗 @default { enabled = true, recursive = true, max_entries = 200000, budget_ms = 8 }
 ---@field execute VVExplorerExecuteConfig|boolean `X` 按文件类型执行光标文件 @default { enabled = true, confirm = true, opts = {} }
 ---@field trash VVExplorerTrashConfig|boolean @default { enabled = true, max_items = 5000, warn_size_mb = 500, scan_on_open = true }
 ---@field select_move_down boolean 多选时 Tab 切换选中后自动将光标下移一行 @default true
@@ -66,6 +73,7 @@ local M = {}
 ---@field diagnostics VVExplorerDiagnosticsConfig
 ---@field execute VVExplorerExecuteConfig
 ---@field trash VVExplorerTrashConfig
+---@field directory_preview VVExplorerDirectoryPreviewConfig
 
 local defaults = {
   position = 'left',
@@ -113,6 +121,12 @@ local defaults = {
       -- database
       sqlite = true, db = true,
     },
+  },
+  directory_preview = {
+    enabled = true,
+    recursive = true,
+    max_entries = 200000,
+    budget_ms = 8,
   },
   execute = {
     enabled = true,
@@ -193,7 +207,7 @@ function M.resolve(opts)
   local config = vim.tbl_deep_extend('force', {}, defaults, opts or {})
   config.state = configured_state
 
-  for _, key in ipairs({ 'trash', 'git', 'diagnostics', 'execute' }) do
+  for _, key in ipairs({ 'trash', 'git', 'diagnostics', 'execute', 'directory_preview' }) do
     if config[key] == false then
       config[key] = { enabled = false }
     elseif config[key] == true then

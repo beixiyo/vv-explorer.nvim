@@ -2,6 +2,7 @@
 
 local Tree = require('vv-explorer.tree')
 local Render = require('vv-explorer.render')
+local MainWin = require('vv-explorer.preview.main_win')
 local Preview = require('vv-explorer.preview')
 local Trash = require('vv-explorer.trash')
 local Editor = require('vv-utils.editor')
@@ -53,7 +54,7 @@ function L.attach(M, H)
 
   local function focus_binary_info(state, node)
     Preview.preview_file(state, node.path)
-    local main = Preview.find_main_win(state.win, state)
+    local main = MainWin.find_main_win(state.win, state)
     if main and vim.api.nvim_win_is_valid(main) then
       vim.api.nvim_set_current_win(main)
     end
@@ -63,14 +64,14 @@ function L.attach(M, H)
     if H.is_binary(node.path, state.opts) then
       return focus_binary_info(state, node)
     end
-    local main = Preview.find_main_win(state.win, state)
+    local main = MainWin.find_main_win(state.win, state)
     if not main then
       Preview.discard(state)
       H.open_in_explorer_split(state, 'rightbelow vsplit', node.path)
       return
     end
     vim.api.nvim_set_current_win(main)
-    local prev_buf = Preview.prepare_main_win(main)
+    local prev_buf = MainWin.prepare_main_win(main)
     local cur = vim.api.nvim_buf_get_name(0)
     -- 经符号链接打开的文件 buffer 名是 realpath 解析形，而 fnamemodify(':p') 不解析
     -- 链接，直接字符串比对会误判「未打开」并重跑 :edit（脏 buffer 触发 E37）
@@ -142,11 +143,11 @@ function L.attach(M, H)
       return focus_binary_info(state, node)
     end
     -- 在分屏（新窗口）打开 → 丢弃 main 里的悬停预览，不顺手 promote 旧预览
-    local main = Preview.find_main_win(state.win, state)
+    local main = MainWin.find_main_win(state.win, state)
     Preview.discard(state)
     if main and vim.api.nvim_win_is_valid(main) then
       vim.api.nvim_set_current_win(main)
-      Preview.prepare_main_win(main)
+      MainWin.prepare_main_win(main)
       vim.cmd(cmd .. ' ' .. vim.fn.fnameescape(node.path))
     else
       H.open_in_explorer_split(state, cmd, node.path)
@@ -274,7 +275,7 @@ function L.attach(M, H)
 
   local function scroll_preview(state, direction)
     if not state.win or not vim.api.nvim_win_is_valid(state.win) then return end
-    local target = Preview.find_main_win(state.win, state)
+    local target = MainWin.find_main_win(state.win, state)
     if not target or not vim.api.nvim_win_is_valid(target) then return end
     Scroll.window(target, direction * SCROLL_LINES)
   end

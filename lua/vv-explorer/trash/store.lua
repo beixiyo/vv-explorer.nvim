@@ -184,19 +184,13 @@ function Store:empty()
   end
 end
 
+--- 走 vv-utils.fs 的分片扫描而不是外部 `du`：BSD / macOS 的 du 没有 `-b` 命令
 ---@param callback fun(bytes:integer)
+---@return VVFsDirScanHandle
 function Store:scan_size(callback)
-  vim.system(
-    { 'du', '-sb', self.trash_dir },
-    { text = true },
-    vim.schedule_wrap(function(result)
-      local bytes = 0
-      if result.code == 0 and result.stdout then
-        bytes = tonumber(result.stdout:match('^(%d+)')) or 0
-      end
-      callback(bytes)
-    end)
-  )
+  return Fs.scan_dir(self.trash_dir, {
+    on_done = function(result) callback(result.bytes) end,
+  })
 end
 
 return Store

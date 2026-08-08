@@ -96,6 +96,13 @@ opts = {
     },
   },
 
+  directory_preview = {
+    enabled = true,            -- Preview directory attributes when the cursor rests on a directory
+    recursive = true,          -- Compute total size and file count recursively (sliced; cancelled when the cursor moves away)
+    max_entries = 200000,      -- Entry cap for the recursive scan; reported as "at least" once reached
+    budget_ms = 8,             -- Maximum milliseconds a single scan slice may hold the main loop
+  },
+
   trash = {
     enabled = true,            -- Move deleted items to trash instead of deleting permanently
     max_items = 5000,          -- Remove oldest entries after this limit
@@ -158,6 +165,40 @@ opts = { binary = { extensions = { sketch = true } } }
 ```
 
 `extensions` uses `vim.tbl_deep_extend`, so only overridden keys need to be specified
+
+### Directory attribute preview
+
+When the cursor rests on a directory, the main window shows that directory's attributes instead of keeping the previous file:
+
+```
+Directory
+
+Path: ~/Documents/code/frontend
+Items: 42 (38 dirs, 4 files)
+Modified: 2026-08-07 14:22
+
+Total size: 13.9 GiB (14,972,003,328 bytes)
+Total files: 892,993
+Total dirs: 142,035
+```
+
+`Items` and `Modified` are read synchronously and appear as soon as the cursor stops. The `Total *` lines come from a recursive scan via `vv-utils.fs.scan_dir`, which yields after at most `budget_ms` per slice — so a large directory never blocks the UI. While scanning, the numbers carry a `(scanning…)` marker and keep growing.
+
+Semantics worth knowing:
+
+- **Filters and gitignore are not applied.** The numbers report real disk usage and match `du -sh`, including `node_modules`, `.git`, and hidden files
+- **Symlinks are not followed.** A link counts only its own size, so a link pointing at an ancestor cannot create a cycle
+- Reaching `max_entries` stops the scan and reports `≥`, instead of walking a huge directory forever
+- Moving the cursor away, opening a file with `<CR>`, or closing the panel **physically cancels** the in-flight scan rather than merely discarding its result
+- Completed results are cached until the filesystem changes (any `watch` fs_event invalidates the whole cache), so returning to the same directory does not rescan
+
+```lua
+-- Shallow information only, no recursive scan
+opts = { directory_preview = { recursive = false } }
+
+-- Disable entirely: the main window stays unchanged on directories
+opts = { directory_preview = false }
+```
 
 ### Executing files (`X`)
 

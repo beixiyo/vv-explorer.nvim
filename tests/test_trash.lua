@@ -69,5 +69,34 @@ assert(vim.wait(200, function() return #limited:list() == 1 end), 'max_items sho
 limited:empty()
 assert(#limited:list() == 0, 'empty should remove payloads and metadata')
 
+-- 容量统计：曾经调 `du -sb`，而 BSD / macOS 的 du 没有 `-b`，回调恒为 0，
+-- 容量提醒（warn_size_mb）因此从未触发过
+local sized_dir = temporary .. '/sized-trash'
+local sized = Store.new({
+  enabled = true,
+  max_items = 10,
+  warn_size_mb = 500,
+  scan_on_open = false,
+}, sized_dir)
+
+local payload_dir = source_dir .. '/nested'
+vim.fn.mkdir(payload_dir, 'p')
+vim.fn.writefile({ string.rep('x', 63) }, source_dir .. '/big.txt')
+vim.fn.writefile({ string.rep('y', 31) }, payload_dir .. '/inner.txt')
+sized:trash({ source_dir .. '/big.txt', payload_dir })
+
+local scanned
+local scan_handle = sized:scan_size(function(bytes) scanned = bytes end)
+assert(type(scan_handle.cancel) == 'function', 'scan_size should return a cancellable handle')
+assert(vim.wait(5000, function() return scanned ~= nil end, 10), 'scan_size should report a size')
+-- writefile 每行补一个换行：64 + 32，metadata 的 json 另算，故只断言下界与非零
+assert(scanned >= 96, 'trash size should count nested payloads, got ' .. tostring(scanned))
+
+local cancelled_bytes
+local cancelled_handle = sized:scan_size(function(bytes) cancelled_bytes = bytes end)
+cancelled_handle.cancel()
+vim.wait(200, function() return false end, 10)
+assert(cancelled_bytes == nil, 'a cancelled trash size scan must not report back')
+
 vim.fn.delete(temporary, 'rf')
 print('vv-explorer trash store: PASS')

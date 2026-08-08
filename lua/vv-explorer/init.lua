@@ -14,7 +14,7 @@
 local Config = require('vv-explorer.config')
 local Icons = require('vv-explorer.icons')
 local Panel = require('vv-explorer.panel')
-local Preview = require('vv-explorer.preview')
+local MainWin = require('vv-explorer.preview.main_win')
 
 local M = {}
 
@@ -140,7 +140,7 @@ function M.setup(opts)
 
   Icons.compile(config.icon_rules)
   register_highlights()
-  Preview.setup_editor_history()
+  MainWin.setup_editor_history()
   register_commands()
   register_global_mappings(config.global_mappings)
   Panel.setup(config)

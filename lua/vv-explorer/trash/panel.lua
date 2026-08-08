@@ -154,26 +154,40 @@ function M.open(store, state)
     buffer = buffer,
     callback = function()
       if not vim.api.nvim_win_is_valid(window) then return end
+
       local cursor = vim.api.nvim_win_get_cursor(window)
       local target = name_columns[cursor[1]]
+
       if target and cursor[2] ~= target then
         vim.api.nvim_win_set_cursor(window, { cursor[1], target })
       end
     end,
   })
 
-  store:scan_size(function(bytes)
+  local size_scan = store:scan_size(function(bytes)
     if not vim.api.nvim_buf_is_valid(buffer) then return end
     local updated_title = '  Trash (' .. #entries .. ' items · ' .. format_size(bytes) .. ')'
+
     vim.bo[buffer].modifiable = true
     vim.api.nvim_buf_set_lines(buffer, 0, 1, false, { updated_title })
     vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, 1)
+
     pcall(vim.api.nvim_buf_set_extmark, buffer, namespace, 0, 0, {
       end_col = #updated_title,
       hl_group = 'VVTrashTitle',
     })
+
     vim.bo[buffer].modifiable = false
   end)
+
+  -- 面板可以被 q / <Esc> / :q / 关窗等多条路径关掉，只在 close() 里取消会漏；
+  -- buffer 是 bufhidden=wipe，BufWipeout 覆盖全部路径
+  vim.api.nvim_create_autocmd('BufWipeout', {
+    buffer = buffer,
+    once = true,
+    callback = function() size_scan.cancel() end,
+    desc = 'vv-explorer: cancel trash size scan',
+  })
 
   local function close()
     pcall(vim.api.nvim_win_close, window, true)

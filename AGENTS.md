@@ -2,6 +2,22 @@
 
 ## 预览系统
 
+### 模块划分
+
+`lua/vv-explorer/preview/` 按职责拆分，依赖单向流动（`init → dir → main_win → mount`，无环）：
+
+| 文件 | 职责 | 谁在用 |
+|---|---|---|
+| `init.lua` | 公共 facade：文件预览、commit / discard 结算、面板生命周期 | actions、panel |
+| `main_win.lua` | 哪个窗口是编辑区（定位与历史） | **actions/navigation、init.lua** 直接用 |
+| `mount.lua` | 预览追踪、挂载与旧 buffer 清理，含 vv-bufferline 适配 | init、dir、main_win |
+| `info_buf.lua` | 属性视图的只读 scratch buffer | init（二进制）、dir |
+| `dir.lua` | 目录统计的编排、取消与缓存 | init、watch |
+
+`main_win` 单独成模块是因为「哪个窗口接收文件」与预览无关——`<CR>` 打开文件、拖放落点、分屏都要先回答它。`mount` 单独成模块是因为 `init` 和 `dir` 都要挂载，留在 `init` 会形成 `init → dir → init` 的循环 require
+
+facade 转发了子模块的状态与能力（`_preview`、`_preview_win`、`find_main_win` 等），转发的是**同一个 table 引用**而非拷贝，老调用方无需改动
+
 ### 核心理念：动态预览 vs 固定 buffer
 
 vv-explorer 的预览实现了一种「零感知」体验：光标在树里移动时，主窗口会即时切换内容，但不会在 bufferline 里留下任何痕迹。直到用户主动按 `l`/`<CR>` 确认打开，该文件才变成真正的「固定」buffer
@@ -17,7 +33,9 @@ vv-explorer 的预览实现了一种「零感知」体验：光标在树里移�
 
 ### 单槽追踪
 
-预览系统用一张 weak-key 表 `M._preview` 以 `state` 为 key，每个 explorer 实例最多只追踪**一个**动态预览 buffer。每次光标移到新文件，旧预览自动被销毁，新预览接入
+预览系统用一张 weak-key 表以 `state` 为 key，每个 explorer 实例最多只追踪**一个**动态预览 buffer。每次光标移到新文件，旧预览自动被销毁，新预览接入
+
+这张表的所有权在 `preview/mount.lua`（`Mount.preview` / `Mount.preview_win`），facade 以 `Preview._preview` / `Preview._preview_win` 转发同一引用。下文沿用 `M._preview` 指代它
 
 ### 生命周期
 

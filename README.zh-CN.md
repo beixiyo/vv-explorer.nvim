@@ -96,6 +96,13 @@ opts = {
     },
   },
 
+  directory_preview = {
+    enabled = true,            -- 光标停在目录上时预览目录属性
+    recursive = true,          -- 自动递归统计总大小与文件数（分片进行，光标移开即取消）
+    max_entries = 200000,      -- 递归统计的 entry 上限，达到后显示为「至少」
+    budget_ms = 8,             -- 递归统计单片最长占用主线程的毫秒数
+  },
+
   trash = {
     enabled = true,            -- 删除时移入回收站而非真删
     max_items = 5000,          -- 回收站最大条目数，超出自动清理最旧的
@@ -158,6 +165,40 @@ opts = { binary = { extensions = { sketch = true } } }
 ```
 
 `extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表
+
+### 目录属性预览
+
+光标停在目录上时，主窗显示该目录的属性，而不是保持上一个文件：
+
+```
+Directory
+
+Path: ~/Documents/code/frontend
+Items: 42 (38 dirs, 4 files)
+Modified: 2026-08-07 14:22
+
+Total size: 13.9 GiB (14,972,003,328 bytes)
+Total files: 892,993
+Total dirs: 142,035
+```
+
+`Items` 与 `Modified` 是同步读出来的，光标一停就有。`Total *` 是递归统计，走 `vv-utils.fs.scan_dir` 分片进行：每片最多 `budget_ms` 毫秒就让出，因此大目录不会卡住界面，扫描期间数字带 `(scanning…)` 标记并持续增长
+
+几个必须知道的口径：
+
+- **不遵守 filter / gitignore**，统计的是磁盘真实占用，数字与 `du -sh` 对得上，包含 `node_modules`、`.git` 和被隐藏的文件
+- **不跟随 symlink**，链接只算它自身的大小，指向祖先目录也不会成环
+- 达到 `max_entries` 会停下并显示为 `≥`，避免在超大目录上无止境地遍历
+- 光标移开目录、按 `<CR>` 打开文件、关闭面板都会**物理取消**在途统计，不是只丢弃结果
+- 跑完的结果会缓存到下次文件系统变化（`watch` 的 fs_event 一触发就整体作废），回到同一目录不再重扫
+
+```lua
+-- 只要浅层信息，不做递归统计
+opts = { directory_preview = { recursive = false } }
+
+-- 完全关闭：光标停在目录上时主窗保持不变
+opts = { directory_preview = false }
+```
 
 ### 执行文件（`X` 键）
 

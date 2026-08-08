@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.3 - 2026-08-07
+
+### Added
+
+- **目录预览**：光标停在目录上时主窗显示目录属性
+- **配置**：新增 `directory_preview`（`enabled` / `recursive` / `max_entries` / `budget_ms`），设 `false` 时光标停在目录上不改变主窗
+
+### Fixed
+
+- **回收站容量统计**：`scan_size` 曾调用 `du -sb`，而 BSD / macOS 的 `du` 不支持 `-b`，命令必然失败使容量恒为 0
+
 ## 0.3.2 - 2026-08-03
 
 ### Fixed
