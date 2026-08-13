@@ -6,6 +6,7 @@
 local Fs = require('vv-utils.fs')
 
 local M = {}
+local namespace = vim.api.nvim_create_namespace('vv-explorer.info-hint')
 
 ---@return integer
 function M.create()
@@ -22,7 +23,8 @@ end
 -- info buffer 常驻 nomodifiable，写入必须成对开关，否则异步进度回写会静默失败
 ---@param buf integer
 ---@param lines string[]
-function M.write(buf, lines)
+---@param opts? { hint_line?:integer } 一基行号；整行使用弱提示高亮
+function M.write(buf, lines, opts)
   vim.api.nvim_set_option_value('modifiable', true, { buf = buf })
   vim.api.nvim_set_option_value('readonly', false, { buf = buf })
 
@@ -32,6 +34,16 @@ function M.write(buf, lines)
   vim.api.nvim_set_option_value('readonly', true, { buf = buf })
 
   Fs.highlight_file_info(buf)
+  vim.api.nvim_buf_clear_namespace(buf, namespace, 0, -1)
+  if opts and opts.hint_line then
+    local line = lines[opts.hint_line]
+    if line then
+      vim.api.nvim_buf_set_extmark(buf, namespace, opts.hint_line - 1, 0, {
+        end_col = #line,
+        hl_group = 'Comment',
+      })
+    end
+  end
 end
 
 ---@param info VVFsFileInfo

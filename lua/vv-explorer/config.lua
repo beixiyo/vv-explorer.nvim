@@ -25,13 +25,15 @@ local M = {}
 
 ---@class VVExplorerDirectoryPreviewConfig
 ---@field enabled boolean 光标停在目录上时预览目录属性（直接子项数量、修改时间） @default true
----@field recursive boolean 自动递归统计总大小与文件数；分片进行，光标移开即取消 @default true
+---@field recursive boolean 允许递归统计总大小与文件数；分片进行，光标移开即取消 @default true
+---@field scan_on_demand boolean 大目录仅按 scan_directory 映射时完整统计；false 时预览目录即不限量自动统计 @default true
+---@field auto_scan_max_entries integer 按需模式下自动探测的 entry 上限；不超过上限时直接显示总量，0 表示禁用 @default 1000
 ---@field max_entries integer 递归统计的 entry 上限，达到后显示为「至少」而不是最终值 @default 200000
 ---@field budget_ms integer 递归统计单片最长占用主线程的毫秒数 @default 8
 
 ---@class VVExplorerExecuteConfig
 ---@field enabled boolean 启用 `X` 执行光标文件 @default true
----@field confirm boolean 执行前弹确认框（显示将运行的命令，安全） @default true
+---@field confirm boolean 执行前弹分层确认浮窗（路径、命令与操作键分色显示） @default true
 ---@field run fun(cmd:string[], ctx:table)? 自定义运行器（ctx 含 path/cwd/runner）；缺省用原生分屏终端 @default nil
 ---@field opts VVExecConfig? 透传给 vv-utils.exec.resolve（运行器优先级 / shebang 等） @default {}
 
@@ -60,7 +62,7 @@ local M = {}
 ---@field git VVExplorerGitConfig|boolean @default { enabled = true, show_ignored = false }
 ---@field diagnostics VVExplorerDiagnosticsConfig|boolean @default { enabled = true }
 ---@field binary VVExplorerBinaryConfig @default { intercept = true, extensions = { ... } }
----@field directory_preview VVExplorerDirectoryPreviewConfig|boolean 目录属性预览；设 false 时光标停在目录上不改变主窗 @default { enabled = true, recursive = true, max_entries = 200000, budget_ms = 8 }
+---@field directory_preview VVExplorerDirectoryPreviewConfig|boolean 目录属性预览；设 false 时光标停在目录上不改变主窗 @default { enabled = true, recursive = true, scan_on_demand = true, auto_scan_max_entries = 1000, max_entries = 200000, budget_ms = 8 }
 ---@field execute VVExplorerExecuteConfig|boolean `X` 按文件类型执行光标文件 @default { enabled = true, confirm = true, opts = {} }
 ---@field trash VVExplorerTrashConfig|boolean @default { enabled = true, max_items = 5000, warn_size_mb = 500, scan_on_open = true }
 ---@field select_move_down boolean 多选时 Tab 切换选中后自动将光标下移一行 @default true
@@ -125,6 +127,8 @@ local defaults = {
   directory_preview = {
     enabled = true,
     recursive = true,
+    scan_on_demand = true,
+    auto_scan_max_entries = 1000,
     max_entries = 200000,
     budget_ms = 8,
   },
@@ -146,6 +150,7 @@ local defaults = {
   mappings = {
     ['<C-e>'] = 'scroll_preview_down',
     ['<C-y>'] = 'scroll_preview_up',
+    ['<S-k>'] = 'scan_directory',
     ['<CR>'] = 'open',
     ['l'] = 'open',
     ['gf'] = 'open',

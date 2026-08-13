@@ -52,6 +52,7 @@ M.setup_editor_history = MainWin.setup_editor_history
 M.find_main_win = MainWin.find_main_win
 
 M.preview_dir = Dir.preview
+M.scan_dir = Dir.scan
 M.cancel_dir_scan = Dir.cancel_scan
 M.invalidate_dir_cache = Dir.invalidate_cache
 

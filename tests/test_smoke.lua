@@ -93,6 +93,43 @@ test('Y buffer 映射到 yank_abs_path action', function()
   assert(mapping and mapping.desc == 'vv-explorer: yank_abs_path', 'Y buffer mapping missing or points to wrong action')
 end)
 
+test('⇧K buffer 映射到按需目录统计 action', function()
+  local mapping = find_mapping('n', 'K')
+  assert(mapping and mapping.desc == 'vv-explorer: scan_directory',
+    '⇧K buffer mapping missing or points to wrong action')
+end)
+
+test('帮助面板显示 ⇧K，并使用 vv-icons 渲染标题和动作', function()
+  find_mapping('n', 'g?').callback()
+  local help_win = vim.api.nvim_get_current_win()
+  local help_buf = vim.api.nvim_get_current_buf()
+  local help_text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\n')
+  local icons = require('vv-icons')
+  local ui_icons = icons.ns.ui
+  assert(help_text:find('⇧K', 1, true), '帮助面板未显示 Shift 图标: ' .. help_text)
+  assert(help_text:find(ui_icons.explorer, 1, true), '帮助面板标题未使用 vv-icons explorer 图标')
+  assert(help_text:find(ui_icons.split_horizontal, 1, true), '帮助面板动作未使用 vv-icons 分屏图标')
+  assert(help_text:find(ui_icons.find_text, 1, true), '帮助面板过滤动作未使用 vv-icons 查找图标')
+
+  local git_line
+  for index, line in ipairs(vim.api.nvim_buf_get_lines(help_buf, 0, -1, false)) do
+    if line:find('toggle gitignored', 1, true) then git_line = index - 1 break end
+  end
+  local colored = false
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+    help_buf,
+    vim.api.nvim_get_namespaces()['vv-utils.help_panel'],
+    { git_line, 0 },
+    { git_line, -1 },
+    { details = true }
+  )) do
+    if mark[4].hl_group == icons.raw.git.git_removed.hl then colored = true break end
+  end
+  assert(colored, 'Git 动作图标未使用 vv-icons 的语义色')
+  vim.api.nvim_feedkeys('q', 'xt', false)
+  assert(not vim.api.nvim_win_is_valid(help_win), '帮助面板应能正常关闭')
+end)
+
 test('buffer 中无 gy 映射', function()
   assert(find_mapping('n', 'gy') == nil, 'buffer still contains gy mapping')
 end)

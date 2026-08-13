@@ -98,7 +98,9 @@ opts = {
 
   directory_preview = {
     enabled = true,            -- 光标停在目录上时预览目录属性
-    recursive = true,          -- 自动递归统计总大小与文件数（分片进行，光标移开即取消）
+    recursive = true,          -- 允许递归统计总大小与文件数
+    scan_on_demand = true,     -- 大目录需按 ⇧K；false = 预览时始终完整统计
+    auto_scan_max_entries = 1000, -- 目录树不超过此 entry 数时自动显示总量；0 = 禁用
     max_entries = 200000,      -- 递归统计的 entry 上限，达到后显示为「至少」
     budget_ms = 8,             -- 递归统计单片最长占用主线程的毫秒数
   },
@@ -182,7 +184,11 @@ Total files: 892,993
 Total dirs: 142,035
 ```
 
-`Items` 与 `Modified` 是同步读出来的，光标一停就有。`Total *` 是递归统计，走 `vv-utils.fs.scan_dir` 分片进行：每片最多 `budget_ms` 毫秒就让出，因此大目录不会卡住界面，扫描期间数字带 `(scanning…)` 标记并持续增长
+`Items` 与 `Modified` 是同步读出来的，光标一停就有
+
+默认会自动计算 entry 数不超过 `auto_scan_max_entries` 的小目录
+
+大目录保留 `⇧K` 提示，等待手动计算
 
 几个必须知道的口径：
 
@@ -195,6 +201,12 @@ Total dirs: 142,035
 ```lua
 -- 只要浅层信息，不做递归统计
 opts = { directory_preview = { recursive = false } }
+
+-- 完全不自动探测，始终等待 ⇧K
+opts = { directory_preview = { auto_scan_max_entries = 0 } }
+
+-- 恢复旧行为：光标停在目录上就自动递归统计
+opts = { directory_preview = { scan_on_demand = false } }
 
 -- 完全关闭：光标停在目录上时主窗保持不变
 opts = { directory_preview = false }
@@ -284,6 +296,7 @@ vim.api.nvim_create_autocmd('User', {
 | `p` | `paste` | 粘贴到光标目录 |
 | 拖拽 | — | 从文件管理器拖文件/文件夹进来复制（详见下方「拖拽落点」） |
 | `<Tab>` | `toggle_select` | 切换多选 |
+| `⇧K` | `scan_directory` | 计算并缓存光标目录的递归总量 |
 | `T` | `trash_panel` | 打开回收站面板 |
 | `<C-e>` / `<C-y>` | 滚动预览 | 滚动主窗口预览 |
 | `g?` | `help` | 键位帮助浮窗 |

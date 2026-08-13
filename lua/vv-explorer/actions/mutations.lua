@@ -8,8 +8,51 @@ local Trash = require('vv-explorer.trash')
 local Lsp = require('vv-explorer.lsp')
 local Loading = require('vv-utils.loading')
 local Text = require('vv-explorer.text')
+local ConfirmLifecycle = require('vv-explorer.confirm_lifecycle')
 
 local M = {}
+
+local uv = vim.uv or vim.loop
+
+local function stat_snapshot(path)
+  local ok, stat = pcall(uv.fs_lstat, path)
+  if not ok or not stat then return nil end
+
+  local mtime = stat.mtime or {}
+  return {
+    dev = stat.dev,
+    ino = stat.ino,
+    type = stat.type,
+    mode = stat.mode,
+    size = stat.size,
+    mtime_sec = mtime.sec,
+    mtime_nsec = mtime.nsec,
+  }
+end
+
+local function same_stat(first, second)
+  if not first or not second then return first == second end
+
+  return first.dev == second.dev
+    and first.ino == second.ino
+    and first.type == second.type
+    and first.mode == second.mode
+    and first.size == second.size
+    and first.mtime_sec == second.mtime_sec
+    and first.mtime_nsec == second.mtime_nsec
+end
+
+local function path_snapshot(path)
+  local absolute = vim.fs.normalize(vim.fn.fnamemodify(path, ':p'))
+  return {
+    path = absolute,
+    stat = stat_snapshot(absolute),
+  }
+end
+
+local function target_is_unchanged(snapshot)
+  return snapshot.stat ~= nil and same_stat(snapshot.stat, stat_snapshot(snapshot.path))
+end
 
 ---@param Actions table
 ---@param H table
@@ -118,56 +161,82 @@ function M.attach(Actions, H, context)
 
   function Actions.delete(state)
     H.ensure_state_fields(state)
+    ConfirmLifecycle.cancel(state)
     local paths = targets(state, context.target_node(state))
     if #paths == 0 then return end
 
     local use_trash = Trash.enabled()
     local verb = use_trash and 'Trash' or 'Delete'
-    local message
-    if #paths == 1 then
-      message = verb .. ' ' .. vim.fn.fnamemodify(paths[1], ':.') .. ' ?'
-    else
-      message = ('%s %d items ?'):format(verb, #paths)
-    end
-    if vim.fn.confirm(message, '&Yes\n&No', 2) ~= 1 then return end
-
-    local resolved = {}
+    local snapshots = {}
     for _, path in ipairs(paths) do
-      resolved[path] = Fs.realpath(path):gsub('/+$', '')
+      local snapshot = path_snapshot(path)
+      if not snapshot.stat then
+        vim.notify('vv-explorer: delete cancelled: target is no longer available: ' .. path, vim.log.levels.WARN)
+        return
+      end
+      snapshots[#snapshots + 1] = snapshot
     end
 
-    local deleted
-    local failed
-    if use_trash then
-      local result = Trash.trash(paths)
-      deleted = result.trashed
-      failed = result.failed
-    else
-      deleted = {}
-      failed = {}
-      for _, path in ipairs(paths) do
-        local ok, err = pcall(Fs.delete, path)
-        if ok then
-          deleted[#deleted + 1] = path
-        else
-          failed[#failed + 1] = tostring(err)
+    local function perform_delete()
+      for _, snapshot in ipairs(snapshots) do
+        if not target_is_unchanged(snapshot) then
+          vim.notify('vv-explorer: delete cancelled: target changed while confirmation was open', vim.log.levels.WARN)
+          return
         end
       end
+
+      local resolved = {}
+      for _, snapshot in ipairs(snapshots) do
+        resolved[snapshot.path] = Fs.realpath(snapshot.path):gsub('/+$', '')
+      end
+
+      local deleted
+      local failed
+      if use_trash then
+        local delete_paths = vim.tbl_map(function(snapshot) return snapshot.path end, snapshots)
+        local result = Trash.trash(delete_paths)
+        deleted = result.trashed
+        failed = result.failed
+      else
+        deleted = {}
+        failed = {}
+        for _, snapshot in ipairs(snapshots) do
+          local ok, err = pcall(Fs.delete, snapshot.path)
+          if ok then
+            deleted[#deleted + 1] = snapshot.path
+          else
+            failed[#failed + 1] = tostring(err)
+          end
+        end
+      end
+
+      if #failed > 0 then
+        vim.notify('vv-explorer: ' .. verb:lower() .. ' errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
+      else
+        local past = use_trash and 'Trashed' or 'Deleted'
+        vim.notify(('%s %s'):format(past, Text.items(#deleted)))
+      end
+
+      if #deleted > 0 then
+        local keys = {}
+        for _, path in ipairs(deleted) do keys[#keys + 1] = resolved[path] end
+        cleanup_deleted_bufs(state, keys)
+      end
+      context.after_fs_change(state)
     end
 
-    if #failed > 0 then
-      vim.notify('vv-explorer: ' .. verb:lower() .. ' errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
-    else
-      local past = use_trash and 'Trashed' or 'Deleted'
-      vim.notify(('%s %s'):format(past, Text.items(#deleted)))
-    end
-
-    if #deleted > 0 then
-      local keys = {}
-      for _, path in ipairs(deleted) do keys[#keys + 1] = resolved[path] end
-      cleanup_deleted_bufs(state, keys)
-    end
-    context.after_fs_change(state)
+    local value = #paths == 1 and vim.fn.fnamemodify(paths[1], ':.') or Text.items(#paths)
+    ConfirmLifecycle.open(state, {
+      title = verb .. (#paths == 1 and ' item?' or ' items?'),
+      details = { { label = #paths == 1 and 'Path' or 'Items', value = value } },
+      severity = use_trash and 'warn' or 'danger',
+      confirm_label = verb,
+      confirm_hl = use_trash and 'DiagnosticWarn' or 'DiagnosticError',
+      on_confirm = perform_delete,
+      on_stale = function()
+        vim.notify('vv-explorer: delete cancelled: explorer context is no longer current', vim.log.levels.WARN)
+      end,
+    })
   end
 
   function Actions.rename(state)

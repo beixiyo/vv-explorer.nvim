@@ -6,17 +6,22 @@
 --   ③ 跑完的结果进缓存，直到文件系统发生变化（由 watch 调 invalidate_cache 作废）
 
 local Fs = require('vv-utils.fs')
+local Keys = require('vv-utils.keys')
 local InfoBuf = require('vv-explorer.preview.info_buf')
 local MainWin = require('vv-explorer.preview.main_win')
 local Mount = require('vv-explorer.preview.mount')
 
 local M = {}
+local SCAN_HINT = 'Hint: Press ' .. Keys.display('<S-k>') .. ' to calculate directory totals'
 
 -- state -> vv-utils.async scope，负责目录统计的 latest-wins 与物理取消
 M.scope = setmetatable({}, { __mode = 'k' })
 
 -- state -> { [abs] = VVFsDirScanResult }。只缓存跑完的结果，取消掉的部分结果不进缓存
 M.cache = setmetatable({}, { __mode = 'k' })
+
+-- state -> { path, mode }；手动完整扫描可取消并接管同目录的自动探测
+M.scanning = setmetatable({}, { __mode = 'k' })
 
 ---@param state table
 ---@return table scope
@@ -35,6 +40,7 @@ end
 function M.cancel_scan(state)
   local scope = M.scope[state]
   if scope and not scope:is_disposed() then scope:cancel() end
+  M.scanning[state] = nil
 end
 
 -- 文件系统一有变化就整体作废，不逐条比对 mtime：递归统计天然会被子孙层级的改动
@@ -50,7 +56,15 @@ end
 ---@param shallow VVFsDirShallow
 ---@param display_path string
 ---@param config VVExplorerDirectoryPreviewConfig
-local function start_scan(state, abs, buf, shallow, display_path, config)
+---@param mode 'probe'|'full'
+local function start_scan(state, abs, buf, shallow, display_path, config, mode)
+  local active = M.scanning[state]
+  if active and active.path == abs then
+    if mode ~= 'full' or active.mode == 'full' then return end
+    M.cancel_scan(state)
+  end
+
+  M.scanning[state] = { path = abs, mode = mode }
   local request = ensure_scope(state):begin({ key = 'dir-scan', mode = 'latest' })
 
   -- 异步结果只能写回它自己创建的那个 buffer。buffer 被 wipe 后 id 会被复用，
@@ -66,15 +80,18 @@ local function start_scan(state, abs, buf, shallow, display_path, config)
   end
 
   local handle = Fs.scan_dir(abs, {
-    max_entries = config.max_entries,
+    -- 多读一个 entry 才能区分「恰好达到阈值」和「还有更多内容」
+    max_entries = mode == 'probe' and config.auto_scan_max_entries + 1 or config.max_entries,
     budget_ms = config.budget_ms,
-    on_progress = function(scan)
+    on_progress = mode == 'full' and function(scan)
       if not request:is_current() then return end
       -- 目标已经不在了（预览被换掉但取消还没传导到），主动停掉剩余遍历
       if not render(scan) then request:cancel() end
     end,
     on_done = function(scan)
+      if M.scanning[state] and M.scanning[state].path == abs then M.scanning[state] = nil end
       if not request:finish() then return end
+      if mode == 'probe' and scan.truncated then return end
       if not render(scan) then return end
 
       local cache = M.cache[state] or {}
@@ -83,7 +100,10 @@ local function start_scan(state, abs, buf, shallow, display_path, config)
     end,
   })
 
-  request:set_cancel(function() handle.cancel() end)
+  request:set_cancel(function()
+    if M.scanning[state] and M.scanning[state].path == abs then M.scanning[state] = nil end
+    handle.cancel()
+  end)
 end
 
 ---@param state table
@@ -111,7 +131,14 @@ function M.preview(state, path)
   local buf = InfoBuf.create()
   vim.b[buf].vv_explorer_dir_info = true
   vim.b[buf].vv_explorer_dir_path = abs
-  InfoBuf.write(buf, Fs.dir_info_lines(shallow, { display_path = path, scan = cached }))
+
+  local lines = Fs.dir_info_lines(shallow, { display_path = path, scan = cached })
+  local show_hint = config.recursive and config.scan_on_demand and shallow.readable and not cached
+  if show_hint then
+    lines[#lines + 1] = ''
+    lines[#lines + 1] = SCAN_HINT
+  end
+  InfoBuf.write(buf, lines, show_hint and { hint_line = #lines } or nil)
 
   local mounted = Mount.mount(state, main, buf, {
     cur_buf = cur_buf,
@@ -122,7 +149,34 @@ function M.preview(state, path)
   if not mounted then return end
 
   if cached or not config.recursive or not shallow.readable then return end
-  start_scan(state, abs, buf, shallow, path, config)
+  if not config.scan_on_demand then
+    start_scan(state, abs, buf, shallow, path, config, 'full')
+  elseif config.auto_scan_max_entries > 0 then
+    start_scan(state, abs, buf, shallow, path, config, 'probe')
+  end
+end
+
+---手动递归统计当前目录；目录属性页尚未挂载时先创建它
+---@param state table
+---@param path string
+function M.scan(state, path)
+  local config = state.opts.directory_preview
+  if not config or not config.enabled or not config.recursive then return end
+
+  local abs = vim.fs.normalize(vim.fn.fnamemodify(path, ':p'))
+  local main = MainWin.find_main_win(state.win, state)
+  if not main or not vim.api.nvim_win_is_valid(main) then return end
+
+  local buf = vim.api.nvim_win_get_buf(main)
+  if vim.b[buf].vv_explorer_dir_path ~= abs then
+    M.preview(state, path)
+    buf = vim.api.nvim_win_get_buf(main)
+  end
+  if vim.b[buf].vv_explorer_dir_path ~= abs or (M.cache[state] or {})[abs] then return end
+
+  local shallow = Fs.inspect_dir(abs)
+  if not shallow.exists or not shallow.readable then return end
+  start_scan(state, abs, buf, shallow, path, config, 'full')
 end
 
 -- 面板销毁：scope 永久关闭（不再复用），缓存随之释放
@@ -132,6 +186,7 @@ function M.detach(state)
   if scope and not scope:is_disposed() then scope:dispose() end
   M.scope[state] = nil
   M.cache[state] = nil
+  M.scanning[state] = nil
 end
 
 return M

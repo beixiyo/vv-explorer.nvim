@@ -9,6 +9,7 @@ local Preview = require('vv-explorer.preview')
 local Render = require('vv-explorer.render')
 local Trash = require('vv-explorer.trash')
 local Tree = require('vv-explorer.tree')
+local ConfirmLifecycle = require('vv-explorer.confirm_lifecycle')
 local UIWindow = require('vv-utils.ui_window')
 local Watch = require('vv-explorer.watch')
 local Window = require('vv-explorer.window')
@@ -60,6 +61,7 @@ end
 
 local function on_buf_wiped()
   if not state then return end
+  ConfirmLifecycle.cancel(state)
   pcall(Actions.invalidate_filter_index, state)
   pcall(Watch.detach, state)
   pcall(Preview.detach, state)
@@ -73,6 +75,7 @@ end
 local function close_window_only(opts)
   if not state then return end
   opts = opts or {}
+  ConfirmLifecycle.cancel(state)
   remember_width()
   if opts.persist_open ~= false and not is_exiting then
     suspend_generation = suspend_generation + 1

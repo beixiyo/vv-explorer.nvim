@@ -78,6 +78,12 @@ local function register_highlights()
     VVExplorerFilterModeFuzzy = { fg = '#7dcfff', bold = true },
     VVExplorerFilterModeGlob = { fg = '#e0af68', bold = true },
     VVExplorerFilterModeRegex = { fg = '#ff6ac1', bold = true },
+    VVExplorerExecuteTitle = { link = 'Title' },
+    VVExplorerExecuteLabel = { link = 'Comment' },
+    VVExplorerExecutePath = { link = 'Directory' },
+    VVExplorerExecuteCommand = { link = 'String' },
+    VVExplorerExecuteRun = { link = 'DiagnosticOk', bold = true },
+    VVExplorerExecuteCancel = { link = 'Comment' },
   })
 end
 

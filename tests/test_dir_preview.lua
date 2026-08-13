@@ -93,7 +93,7 @@ end)
 
 test('递归统计异步补算，跑完后换成最终值', function()
   local root = make_fixture()
-  local main, state = open_layout()
+  local main, state = open_layout({ directory_preview = { scan_on_demand = false } })
 
   Preview.preview_dir(state, root)
   local buf = vim.api.nvim_win_get_buf(main)
@@ -139,7 +139,7 @@ test('切到文件后过期统计不写回主窗', function()
   vim.fn.writefile({ 'sibling' }, sibling)
 
   -- 预算压到最小，保证切走时统计一定还在途
-  local main, state = open_layout({ directory_preview = { budget_ms = 1 } })
+  local main, state = open_layout({ directory_preview = { scan_on_demand = false, budget_ms = 1 } })
 
   Preview.preview_dir(state, root)
   local dir_buf = vim.api.nvim_win_get_buf(main)
@@ -162,7 +162,7 @@ end)
 
 test('跑完的统计进缓存，回到同一目录直接是完成态', function()
   local root, nested = make_fixture()
-  local main, state = open_layout()
+  local main, state = open_layout({ directory_preview = { scan_on_demand = false } })
 
   Preview.preview_dir(state, root)
   local buf = vim.api.nvim_win_get_buf(main)
@@ -191,6 +191,60 @@ test('directory_preview = false 时目录节点不改变主窗', function()
   Preview.preview_dir(state, root)
 
   assert(vim.api.nvim_win_get_buf(main) == before, '关闭目录预览后不应替换主窗 buffer')
+
+  Preview.discard(state)
+  vim.fn.delete(root, 'rf')
+end)
+
+test('默认自动计算阈值内的小目录', function()
+  local root = make_fixture()
+  local main, state = open_layout()
+
+  Preview.preview_dir(state, root)
+  local buf = vim.api.nvim_win_get_buf(main)
+  assert(vim.wait(3000, function()
+    return text_of(buf):find('Total files: 2', 1, true) ~= nil
+  end, 10), '阈值内的小目录应自动完成递归统计')
+  assert(not text_of(buf):find('Hint:', 1, true), '自动统计完成后应移除快捷键提示')
+
+  Preview.discard(state)
+  vim.fn.delete(root, 'rf')
+end)
+
+test('自动探测达到阈值便停止，大目录仍可按 ⇧K 完整计算', function()
+  local root = make_fixture()
+  local main, state = open_layout({ directory_preview = { auto_scan_max_entries = 1 } })
+
+  Preview.preview_dir(state, root)
+  local buf = vim.api.nvim_win_get_buf(main)
+  vim.wait(100, function() return false end, 10)
+  assert(not text_of(buf):find('Total files:', 1, true), '达到自动探测阈值后不应显示部分结果')
+  assert(text_of(buf):find('Hint: Press ⇧K to calculate directory totals', 1, true),
+    '大目录应保留英文快捷键提示')
+
+  Preview.scan_dir(state, root)
+  assert(vim.wait(3000, function()
+    return text_of(buf):find('Total files: 2', 1, true) ~= nil
+  end, 10), '手动触发后应完成递归统计')
+  assert(not text_of(buf):find('Hint:', 1, true), '开始统计后应移除按需提示')
+
+  Preview.scan_dir(state, root)
+  assert(not text_of(buf):find('scanning', 1, true), '已有缓存时重复触发不应重新扫描')
+
+  Preview.discard(state)
+  vim.fn.delete(root, 'rf')
+end)
+
+test('auto_scan_max_entries = 0 时不自动探测', function()
+  local root = make_fixture()
+  local main, state = open_layout({ directory_preview = { auto_scan_max_entries = 0 } })
+
+  Preview.preview_dir(state, root)
+  local buf = vim.api.nvim_win_get_buf(main)
+  vim.wait(100, function() return false end, 10)
+  assert(not text_of(buf):find('Total files:', 1, true), '配置为 0 时不应自动递归统计')
+  assert(text_of(buf):find('Hint: Press ⇧K to calculate directory totals', 1, true),
+    '禁用自动探测后应保留快捷键提示')
 
   Preview.discard(state)
   vim.fn.delete(root, 'rf')

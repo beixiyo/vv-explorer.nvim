@@ -8,6 +8,7 @@ local Trash = require('vv-explorer.trash')
 local Editor = require('vv-utils.editor')
 local Fs = require('vv-utils.fs')
 local Scroll = require('vv-utils.scroll')
+local ConfirmLifecycle = require('vv-explorer.confirm_lifecycle')
 
 local L = {}
 
@@ -31,6 +32,11 @@ function L.attach(M, H)
   --      root 字段），故再发一次事件让 vv-git 这类消费者即时切仓库重载
   ---@param state table
   local function after_root_change(state)
+    -- root 用对象身份表示一次代际；切根立即关闭所有待确认动作，避免 A→B→A
+    -- 复用旧确认。确认适配器仍会在回调前再次校验，覆盖未经过本入口的切换。
+    state._root_generation = (state._root_generation or 0) + 1
+    ConfirmLifecycle.cancel(state)
+
     if state.git and state.git.refresh then state.git.refresh() end
 
     local root = state.root.path
@@ -165,11 +171,18 @@ function L.attach(M, H)
 
   -- 按文件类型执行光标文件：vv-utils.exec 决定命令 → 确认 → 跑（默认分屏终端，可配 run 覆盖）
   function M.execute(state)
+    -- 新的执行请求拥有同一确认槽位；无论后续解析成功与否，都先淘汰旧确认。
+    ConfirmLifecycle.cancel(state)
+
     local cfg = state.opts.execute or {}
     if cfg.enabled == false then return end
 
     local node = H.node_under_cursor(state)
     if not node or node.is_dir then return end
+    if type(node.path) ~= 'string' or node.path == '' then
+      vim.notify('vv-explorer: cannot run a node without a path', vim.log.levels.WARN)
+      return
+    end
 
     local plan, err = require('vv-utils.exec').resolve(node.path, cfg.opts)
     if not plan then
@@ -177,21 +190,113 @@ function L.attach(M, H)
       return
     end
 
-    if cfg.confirm ~= false then
-      local prompt = 'vv-explorer execute?\n  ' .. table.concat(plan.cmd, ' ')
-      if vim.fn.confirm(prompt, '&Yes\n&No', 2) ~= 1 then return end
-    end
-
-    local ctx = { path = node.path, cwd = vim.fs.dirname(node.path), runner = plan.runner }
-    if type(cfg.run) == 'function' then
-      cfg.run(plan.cmd, ctx)
+    if type(plan.cmd) ~= 'table' or #plan.cmd == 0 then
+      vim.notify('vv-explorer: resolved command is empty', vim.log.levels.WARN)
       return
     end
 
-    -- 原生分屏终端（零插件依赖）
-    vim.cmd('botright 15new')
-    vim.fn.jobstart(plan.cmd, { term = true, cwd = ctx.cwd })
-    vim.cmd('startinsert')
+    local function contains_path(argv, path)
+      local absolute = vim.fn.fnamemodify(path, ':p')
+      for _, arg in ipairs(argv) do
+        if type(arg) == 'string' and (arg == path or vim.fn.fnamemodify(arg, ':p') == absolute) then
+          return true
+        end
+      end
+      return false
+    end
+
+    -- vv-utils.exec 目前只用项目 cwd 标识项目入口。单文件 Go 计划同样带 cwd，
+    -- 但 argv 保留源文件路径，因此据此区分确认框中的目标类型。自定义计划可通过
+    -- `target = 'file' | 'project'` 明确指定。
+    local target = plan.target
+    if target ~= 'file' and target ~= 'project' then
+      target = plan.cwd and not contains_path(plan.cmd, node.path) and 'project' or 'file'
+    end
+
+    local ctx = {
+      path = node.path,
+      cwd = type(plan.cwd) == 'string' and plan.cwd or vim.fs.dirname(node.path),
+      runner = plan.runner,
+    }
+
+    local function source_is_current()
+      local current = H.node_under_cursor(state)
+      return current and current.path == node.path
+    end
+
+    local function notify_failure(message)
+      vim.notify('vv-explorer: ' .. message, vim.log.levels.WARN)
+    end
+
+    local function valid_cwd()
+      if type(ctx.cwd) ~= 'string' or ctx.cwd == '' then
+        return false, 'working directory is unavailable'
+      end
+      local ok, is_directory = pcall(vim.fn.isdirectory, ctx.cwd)
+      if not ok or is_directory ~= 1 then
+        return false, 'working directory does not exist: ' .. ctx.cwd
+      end
+      return true
+    end
+
+    local function run()
+      local cwd_ok, cwd_error = valid_cwd()
+      if not cwd_ok then
+        notify_failure(cwd_error)
+        return
+      end
+
+      if type(cfg.run) == 'function' then
+        local ok, result, result_error = pcall(cfg.run, plan.cmd, ctx)
+        if not ok then
+          notify_failure('runner failed: ' .. tostring(result))
+        elseif result == false then
+          notify_failure('runner failed' .. (result_error and (': ' .. tostring(result_error)) or ''))
+        end
+        return
+      end
+
+      -- 原生分屏终端（零插件依赖）
+      local terminal_win
+      local started = false
+      local ok, startup_error = pcall(function()
+        vim.cmd('botright 15new')
+        terminal_win = vim.api.nvim_get_current_win()
+        local job_id = vim.fn.jobstart(plan.cmd, { term = true, cwd = ctx.cwd })
+        if type(job_id) ~= 'number' or job_id <= 0 then
+          error('jobstart returned ' .. tostring(job_id))
+        end
+        started = true
+        vim.cmd('startinsert')
+      end)
+      if not ok then
+        if not started and terminal_win and vim.api.nvim_win_is_valid(terminal_win) then
+          pcall(vim.api.nvim_win_close, terminal_win, true)
+        end
+        notify_failure('could not start runner: ' .. tostring(startup_error))
+      end
+    end
+
+    if cfg.confirm == false then return run() end
+
+    return ConfirmLifecycle.open(state, {
+      is_current = source_is_current,
+      on_confirm = run,
+      on_stale = function()
+        notify_failure('execute cancelled: explorer context is no longer current')
+      end,
+    }, function(confirm_opts)
+      return require('vv-explorer.execute_confirm').open(
+        node.path,
+        ctx.cwd,
+        plan.cmd,
+        confirm_opts.on_confirm,
+        {
+          target = target,
+          on_cancel = confirm_opts.on_cancel,
+        }
+      )
+    end)
   end
 
   function M.toggle_gitignored(state)
@@ -282,6 +387,11 @@ function L.attach(M, H)
 
   function M.scroll_preview_down(state) scroll_preview(state, 1) end
   function M.scroll_preview_up(state) scroll_preview(state, -1) end
+
+  function M.scan_directory(state)
+    local node = H.node_under_cursor(state)
+    if node and node.is_dir then Preview.scan_dir(state, node.path) end
+  end
 
   function M.trash_panel(state) Trash.open_panel(state) end
 end

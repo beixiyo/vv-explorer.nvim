@@ -98,7 +98,9 @@ opts = {
 
   directory_preview = {
     enabled = true,            -- Preview directory attributes when the cursor rests on a directory
-    recursive = true,          -- Compute total size and file count recursively (sliced; cancelled when the cursor moves away)
+    recursive = true,          -- Allow recursive total size and file count scans
+    scan_on_demand = true,     -- Require ⇧K for large trees; false = always scan fully on preview
+    auto_scan_max_entries = 1000, -- Auto-show totals when the directory tree has at most this many entries; 0 = disabled
     max_entries = 200000,      -- Entry cap for the recursive scan; reported as "at least" once reached
     budget_ms = 8,             -- Maximum milliseconds a single scan slice may hold the main loop
   },
@@ -182,7 +184,11 @@ Total files: 892,993
 Total dirs: 142,035
 ```
 
-`Items` and `Modified` are read synchronously and appear as soon as the cursor stops. The `Total *` lines come from a recursive scan via `vv-utils.fs.scan_dir`, which yields after at most `budget_ms` per slice — so a large directory never blocks the UI. While scanning, the numbers carry a `(scanning…)` marker and keep growing.
+`Items` and `Modified` are read synchronously and appear as soon as the cursor stops.
+
+By default, directories with at most `auto_scan_max_entries` entries are calculated automatically
+
+Larger trees keep the `⇧K` hint and wait for manual calculation
 
 Semantics worth knowing:
 
@@ -195,6 +201,12 @@ Semantics worth knowing:
 ```lua
 -- Shallow information only, no recursive scan
 opts = { directory_preview = { recursive = false } }
+
+-- Never probe automatically; always wait for ⇧K
+opts = { directory_preview = { auto_scan_max_entries = 0 } }
+
+-- Restore automatic recursive scans when a directory is previewed
+opts = { directory_preview = { scan_on_demand = false } }
 
 -- Disable entirely: the main window stays unchanged on directories
 opts = { directory_preview = false }
@@ -284,6 +296,7 @@ vim.api.nvim_create_autocmd('User', {
 | `p` | `paste` | Paste into the cursor directory |
 | Drag and drop | — | Copy files/directories from the file manager |
 | `<Tab>` | `toggle_select` | Toggle multi-selection |
+| `⇧K` | `scan_directory` | Calculate and cache totals for the hovered directory |
 | `T` | `trash_panel` | Open the trash panel |
 | `<C-e>` / `<C-y>` | Scroll preview | Scroll the main-window preview |
 | `g?` | `help` | Open the mapping help window |
