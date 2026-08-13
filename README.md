@@ -1,7 +1,8 @@
 <div align="center">
   <h1>vv-explorer.nvim</h1>
   <p>English | <a href="./README.zh-CN.md">中文</a></p>
-  <video muted autoplay loop controls src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.mp4" title="vv-explorer demo"></video>
+  <video muted autoplay loop controls src="https://github.com/user-attachments/assets/d51c28c1-4d21-4d1e-9bba-12dbe13e6669" width="900" title="vv-explorer demo"></video>
+  
   <img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.png" alt="vv-explorer demo" width="600" />
   <table>
     <tr>
