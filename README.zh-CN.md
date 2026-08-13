@@ -1,7 +1,18 @@
 <div align="center">
   <h1>vv-explorer.nvim</h1>
   <p><a href="./README.md">English</a> | 中文</p>
-  <img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.png" alt="vv-explorer 演示" width="900" />
+  <video muted autoplay loop controls src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.mp4" title="vv-explorer 演示"></video>
+  <img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.png" alt="vv-explorer 演示" width="600" />
+  <table>
+    <tr>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-filter.png" alt="异步过滤" width="440" /></td>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-completion.png" alt="过滤补全" width="440" /></td>
+    </tr>
+    <tr>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-fileinfo.png" alt="目录信息" width="440" /></td>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-help.png" alt="快捷键帮助" width="440" /></td>
+    </tr>
+  </table>
   <p>想要我的 Neovim 配置？查看 <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>VSCode 风的 Neovim 文件树 — 实时预览、fd 异步过滤、回收站、零第三方依赖</em>
   <p>

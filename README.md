@@ -1,7 +1,18 @@
 <div align="center">
   <h1>vv-explorer.nvim</h1>
   <p>English | <a href="./README.zh-CN.md">中文</a></p>
-  <img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.png" alt="vv-explorer demo" width="900" />
+  <video muted autoplay loop controls src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.mp4" title="vv-explorer demo"></video>
+  <img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.png" alt="vv-explorer demo" width="600" />
+  <table>
+    <tr>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-filter.png" alt="Asynchronous filter" width="440" /></td>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-completion.png" alt="Filter completion" width="440" /></td>
+    </tr>
+    <tr>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-fileinfo.png" alt="Directory information" width="440" /></td>
+      <td><img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer-help.png" alt="Keymap help" width="440" /></td>
+    </tr>
+  </table>
   <p>Want my Neovim configuration? See <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>A VS Code-style Neovim file tree with live preview, asynchronous fd filtering, trash support, and zero third-party dependencies</em>
   <p>
