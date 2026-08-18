@@ -5,7 +5,8 @@
 --   ② 光标一移开就物理取消：经 vv-utils.async scope 的 latest-wins 传导到 scan handle
 --   ③ 跑完的结果进缓存，直到文件系统发生变化（由 watch 调 invalidate_cache 作废）
 
-local Fs = require('vv-utils.fs')
+local DirRender = require('vv-utils.fs.dir_render')
+local DirScan = require('vv-utils.fs.dir_scan')
 local Keys = require('vv-utils.keys')
 local InfoBuf = require('vv-explorer.preview.info_buf')
 local MainWin = require('vv-explorer.preview.main_win')
@@ -72,14 +73,14 @@ local function start_scan(state, abs, buf, shallow, display_path, config, mode)
   local function render(scan)
     if not vim.api.nvim_buf_is_valid(buf) then return false end
     if vim.b[buf].vv_explorer_dir_path ~= abs then return false end
-    InfoBuf.write(buf, Fs.dir_info_lines(shallow, {
+    InfoBuf.write(buf, DirRender.lines(shallow, {
       display_path = display_path,
       scan = scan,
     }))
     return true
   end
 
-  local handle = Fs.scan_dir(abs, {
+  local handle = DirScan.scan(abs, {
     -- 多读一个 entry 才能区分「恰好达到阈值」和「还有更多内容」
     max_entries = mode == 'probe' and config.auto_scan_max_entries + 1 or config.max_entries,
     budget_ms = config.budget_ms,
@@ -124,7 +125,7 @@ function M.preview(state, path)
 
   M.cancel_scan(state)
 
-  local shallow = Fs.inspect_dir(abs)
+  local shallow = DirScan.shallow(abs)
   if not shallow.exists then return end
 
   local cached = (M.cache[state] or {})[abs]
@@ -132,7 +133,7 @@ function M.preview(state, path)
   vim.b[buf].vv_explorer_dir_info = true
   vim.b[buf].vv_explorer_dir_path = abs
 
-  local lines = Fs.dir_info_lines(shallow, { display_path = path, scan = cached })
+  local lines = DirRender.lines(shallow, { display_path = path, scan = cached })
   local show_hint = config.recursive and config.scan_on_demand and shallow.readable and not cached
   if show_hint then
     lines[#lines + 1] = ''
@@ -174,7 +175,7 @@ function M.scan(state, path)
   end
   if vim.b[buf].vv_explorer_dir_path ~= abs or (M.cache[state] or {})[abs] then return end
 
-  local shallow = Fs.inspect_dir(abs)
+  local shallow = DirScan.shallow(abs)
   if not shallow.exists or not shallow.readable then return end
   start_scan(state, abs, buf, shallow, path, config, 'full')
 end

@@ -3,7 +3,8 @@
 -- 内容由调用方决定（vv-utils.fs 的 file_info_lines / dir_info_lines），本模块只负责
 -- buffer 的资源形态与只读约束
 
-local Fs = require('vv-utils.fs')
+local FileHighlight = require('vv-utils.fs.file_info_highlight')
+local FileRender = require('vv-utils.fs.file_render')
 
 local M = {}
 local namespace = vim.api.nvim_create_namespace('vv-explorer.info-hint')
@@ -33,7 +34,7 @@ function M.write(buf, lines, opts)
   vim.api.nvim_set_option_value('modifiable', false, { buf = buf })
   vim.api.nvim_set_option_value('readonly', true, { buf = buf })
 
-  Fs.highlight_file_info(buf)
+  FileHighlight.apply(buf)
   vim.api.nvim_buf_clear_namespace(buf, namespace, 0, -1)
   if opts and opts.hint_line then
     local line = lines[opts.hint_line]
@@ -52,7 +53,7 @@ end
 ---@return integer
 function M.create_binary(info, display_path, abs)
   local buf = M.create()
-  M.write(buf, Fs.file_info_lines(info, { display_path = display_path }))
+  M.write(buf, FileRender.lines(info, { display_path = display_path }))
 
   vim.b[buf].vv_explorer_binary_info = true
   vim.b[buf].vv_explorer_binary_path = abs

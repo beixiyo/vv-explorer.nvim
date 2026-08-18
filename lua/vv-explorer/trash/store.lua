@@ -1,6 +1,7 @@
 -- 回收站存储与可恢复的文件系统操作
 
 local Fs = require('vv-utils.fs')
+local DirScan = require('vv-utils.fs.dir_scan')
 
 local uv = vim.uv or vim.loop
 
@@ -188,7 +189,7 @@ end
 ---@param callback fun(bytes:integer)
 ---@return VVFsDirScanHandle
 function Store:scan_size(callback)
-  return Fs.scan_dir(self.trash_dir, {
+  return DirScan.scan(self.trash_dir, {
     on_done = function(result) callback(result.bytes) end,
   })
 end
