@@ -77,6 +77,7 @@ local function close_window_only(opts)
   opts = opts or {}
   ConfirmLifecycle.cancel(state)
   remember_width()
+  pcall(Preview.discard_info_preview, state)
   if opts.persist_open ~= false and not is_exiting then
     suspend_generation = suspend_generation + 1
     save_open_intent(false)

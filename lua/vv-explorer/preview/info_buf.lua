@@ -61,4 +61,46 @@ function M.create_binary(info, display_path, abs)
   return buf
 end
 
+-- 身份标记由本模块统一持有：属性页是「一次性 scratch」而不是用户内容，预览挂载、
+-- 面板关闭、删除清理三处都要据此判断，各自裸写 b 变量名会让标记语义散开
+
+---@param buf integer
+---@param abs string 目录绝对路径（已 normalize）
+function M.mark_dir(buf, abs)
+  vim.b[buf].vv_explorer_dir_info = true
+  vim.b[buf].vv_explorer_dir_path = abs
+end
+
+---@param buf integer
+---@return boolean
+function M.is_dir_info(buf)
+  return vim.b[buf].vv_explorer_dir_info == true
+end
+
+-- 目录属性页与二进制属性页共用同一套资源形态（nofile + bufhidden=wipe），
+-- 凡是「这不是用户内容」的判断都应该用它，而不是只认目录那一种
+---@param buf integer
+---@return boolean
+function M.is_info(buf)
+  return M.is_dir_info(buf) or vim.b[buf].vv_explorer_binary_info == true
+end
+
+---@param buf integer
+---@return string? abs 目录属性页记录的目录路径；其它 buffer 为 nil
+function M.dir_path(buf)
+  return vim.b[buf].vv_explorer_dir_path
+end
+
+---@param buf integer
+---@return string? abs 二进制属性页记录的文件路径；其它 buffer 为 nil
+function M.binary_path(buf)
+  return vim.b[buf].vv_explorer_binary_path
+end
+
+---@param buf integer
+---@return string? abs 属性页对应的源路径（目录或二进制文件）；其它 buffer 为 nil
+function M.source_path(buf)
+  return M.binary_path(buf) or M.dir_path(buf)
+end
+
 return M

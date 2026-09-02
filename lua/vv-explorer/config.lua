@@ -52,6 +52,7 @@ local M = {}
 ---@field group_empty_dirs boolean 单链 dir 合并显示 @default true
 ---@field preview boolean VSCode 风单击预览 @default true
 ---@field preview_debounce_ms integer 预览防抖延迟（毫秒），光标停顿后才触发预览；0 = 不防抖 @default 138
+---@field restore_main_win fun(win:integer)? explorer 关闭时若属性页预览（目录详情 / 二进制属性）仍挂在主窗，且预览开始前的 buffer 已失效，调用它把该窗口交还中性内容。回调在 win 所在窗口与 tabpage 的上下文中执行；缺省、报错或未能换走目标 buffer 时依次回退到 vv-dashboard（装了才用）与空白 buffer @default nil
 ---@field watch boolean libuv fs_event 自动刷新 @default true
 ---@field follow_file boolean 切换 buffer 时自动在树中展开并高亮对应文件（不抢焦点） @default true
 ---@field follow_file_debounce_ms integer follow_file BufEnter 防抖延迟（毫秒），用于快速 buffer 切换场景；0 = 不防抖 @default 0

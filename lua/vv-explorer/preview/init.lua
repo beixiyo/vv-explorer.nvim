@@ -70,7 +70,7 @@ function M.preview_file(state, path)
 
   local cur_buf = vim.api.nvim_win_get_buf(main)
   local cur_buf_name = vim.fs.normalize(vim.api.nvim_buf_get_name(cur_buf))
-  local cur_binary_path = vim.b[cur_buf].vv_explorer_binary_path
+  local cur_binary_path = InfoBuf.binary_path(cur_buf)
   if info and cur_binary_path == abs then return end
   if not info and cur_buf_name == abs then return end
 
@@ -128,6 +128,63 @@ function M.discard(state)
   Mount.reset(state)
 end
 
+-- 属性页预览（目录详情 / 二进制文件属性）挂在真实编辑窗口里，explorer 窗口关闭后
+-- 必须随之关闭：否则主窗会永久停在一张过期的属性页上，且在途的递归扫描不会被取消
+-- 只处理属性页 scratch，普通文件的动态预览是用户内容，一律不动
+--
+-- 不能走 M.discard/Mount.drop：那条路径的 is_visible_elsewhere 检查假定 buf 已经
+-- 被换下主窗（换新预览时才调用），这里 buf 恰恰还挂在主窗里，检查永远为真，删除
+-- 会被跳过。info buffer 是 bufhidden='wipe'，只要先把主窗切走，它就会被自动 wipe
+---@param state table
+function M.discard_info_preview(state)
+  local buf = Mount.preview[state]
+  if not buf then return end
+
+  -- 属性页可能已被主窗里的外部 :edit 通过 bufhidden=wipe 回收。此时身份标记也随
+  -- buffer 消失，不能再用 InfoBuf.is_info 判断，但失效的动态预览已不可能保留，
+  -- 仍须取消目录扫描并清空追踪，避免关闭面板后留下后台任务与野引用
+  local valid = vim.api.nvim_buf_is_valid(buf)
+  if valid and not InfoBuf.is_info(buf) then return end
+
+  -- 取消扫描、清 bufferline 预览态、重置单槽必须成组执行，有效与失效两种属性页都一样
+  local win = Mount.preview_win[state]
+  local restore_buf = Mount.restore_buf[state]
+  Dir.cancel_scan(state)
+  Mount.clear_bufferline(win, buf, false)
+  Mount.reset(state)
+
+  if not valid then return end
+  if not (win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf) then return end
+
+  -- 四级兜底，命中即止：
+  --   ① 预览链开始前主窗真正显示的 buffer（用户手头正开着的文件）
+  --   ② state.opts.restore_main_win 自定义策略
+  --   ③ vv-dashboard（可选依赖，装了才用）
+  --   ④ 空白 buffer——保证任何情况下都不把过期属性页留在窗口里
+  if restore_buf and restore_buf ~= buf and vim.api.nvim_buf_is_valid(restore_buf) then
+    if pcall(vim.api.nvim_win_set_buf, win, restore_buf) then return end
+  end
+
+  -- 二、三级都在 win 的窗口与 tabpage 上下文中执行：restore_main_win 和 vv-dashboard
+  -- 都是「在当前窗口打开」的语义，不切上下文就会把内容推到用户当前所在的另一个 tab
+  local restore = state.opts and state.opts.restore_main_win
+  pcall(vim.api.nvim_win_call, win, function()
+    -- ② 用户自定义策略优先，它比内置适配更清楚该显示什么；报错也不能中断后续兜底
+    if restore then
+      pcall(restore, win)
+      if vim.api.nvim_win_get_buf(win) ~= buf then return end
+    end
+
+    -- ③ 内置可选适配：装了 vv-dashboard 就交还给它，比空白 buffer 更像「回到起点」
+    MainWin.restore_with_dashboard(win)
+  end)
+
+  -- ④ 不变量：无论前面哪一级成功与否，绝不把过期属性页留在窗口里
+  if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+    MainWin.replace_with_blank(win)
+  end
+end
+
 -- 结算一次「在 win 里显式打开文件」：win 当前显示的 buffer 即提交目标
 -- 必须在 win 已经切到目标文件「之后」调用——这样：
 --   ① 指向其他文件的陈旧预览被丢弃且不会被 render 复原（win 已不显示它）；
@@ -167,9 +224,7 @@ function M.clear_if_deleted(state, path_set)
 
   local buf = Mount.preview[state]
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local raw = vim.b[buf].vv_explorer_binary_path
-    or vim.b[buf].vv_explorer_dir_path
-    or vim.api.nvim_buf_get_name(buf)
+  local raw = InfoBuf.source_path(buf) or vim.api.nvim_buf_get_name(buf)
   if raw == '' then return end
   local name = Fs.realpath(raw):gsub('/+$', '')
   if path_set[name] then

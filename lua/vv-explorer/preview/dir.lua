@@ -72,7 +72,7 @@ local function start_scan(state, abs, buf, shallow, display_path, config, mode)
   -- 因此除了 valid 还要比对 buffer 上记录的目录
   local function render(scan)
     if not vim.api.nvim_buf_is_valid(buf) then return false end
-    if vim.b[buf].vv_explorer_dir_path ~= abs then return false end
+    if InfoBuf.dir_path(buf) ~= abs then return false end
     InfoBuf.write(buf, DirRender.lines(shallow, {
       display_path = display_path,
       scan = scan,
@@ -121,7 +121,7 @@ function M.preview(state, path)
   -- 光标在同一个目录内上下移动会反复触发 CursorMoved；重建 buffer 会打断自己的
   -- 在途统计，让大目录永远算不完
   local cur_buf = vim.api.nvim_win_get_buf(main)
-  if vim.b[cur_buf].vv_explorer_dir_path == abs then return end
+  if InfoBuf.dir_path(cur_buf) == abs then return end
 
   M.cancel_scan(state)
 
@@ -130,8 +130,7 @@ function M.preview(state, path)
 
   local cached = (M.cache[state] or {})[abs]
   local buf = InfoBuf.create()
-  vim.b[buf].vv_explorer_dir_info = true
-  vim.b[buf].vv_explorer_dir_path = abs
+  InfoBuf.mark_dir(buf, abs)
 
   local lines = DirRender.lines(shallow, { display_path = path, scan = cached })
   local show_hint = config.recursive and config.scan_on_demand and shallow.readable and not cached
@@ -169,11 +168,11 @@ function M.scan(state, path)
   if not main or not vim.api.nvim_win_is_valid(main) then return end
 
   local buf = vim.api.nvim_win_get_buf(main)
-  if vim.b[buf].vv_explorer_dir_path ~= abs then
+  if InfoBuf.dir_path(buf) ~= abs then
     M.preview(state, path)
     buf = vim.api.nvim_win_get_buf(main)
   end
-  if vim.b[buf].vv_explorer_dir_path ~= abs or (M.cache[state] or {})[abs] then return end
+  if InfoBuf.dir_path(buf) ~= abs or (M.cache[state] or {})[abs] then return end
 
   local shallow = DirScan.shallow(abs)
   if not shallow.exists or not shallow.readable then return end

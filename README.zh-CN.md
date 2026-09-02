@@ -208,6 +208,7 @@ Total dirs: 142,035
 - 达到 `max_entries` 会停下并显示为 `≥`，避免在超大目录上无止境地遍历
 - 光标移开目录、按 `<CR>` 打开文件、关闭面板都会**物理取消**在途统计，不是只丢弃结果
 - 跑完的结果会缓存到下次文件系统变化（`watch` 的 fs_event 一触发就整体作废），回到同一目录不再重扫
+- **关闭面板会把属性页一起撤下。** 属性页是一次性 scratch，不是你的内容，主窗不会停在一张过期的属性页上。恢复顺序依次是：预览链开始前主窗显示的 buffer → `restore_main_win` 放进去的内容 → 已安装的 [vv-dashboard](https://github.com/beixiyo/vv-dashboard.nvim) → 空白 buffer。二进制属性页同样适用
 
 ```lua
 -- 只要浅层信息，不做递归统计
@@ -221,6 +222,15 @@ opts = { directory_preview = { scan_on_demand = false } }
 
 -- 完全关闭：光标停在目录上时主窗保持不变
 opts = { directory_preview = false }
+
+-- 装了 vv-dashboard 会自动接入；只有想交给别的东西时才需要配置
+-- 回调执行时目标窗口已是当前窗口与 tabpage，「在当前窗口打开」类的回调会落在正确位置
+-- 回调没换走内容时依次回退到 vv-dashboard 与空白 buffer
+opts = {
+  restore_main_win = function(win)
+    require('my-dashboard').open()
+  end,
+}
 ```
 
 ### 执行文件（`X` 键）

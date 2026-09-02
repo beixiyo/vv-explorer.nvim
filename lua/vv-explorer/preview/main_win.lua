@@ -54,14 +54,68 @@ local function is_replaceable_main_win(win)
   return ft == 'dashboard' or ft == 'alpha' or ft == 'ministarter' or is_empty_normal_buf(buf)
 end
 
+-- 本 tab 内除了 explorer 树窗与浮窗之外，win 是唯一的普通窗口
+---@param win integer
+---@return boolean
+local function is_sole_content_win(win)
+  local tab = vim.api.nvim_win_get_tabpage(win)
+  for _, other in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    if other ~= win and vim.api.nvim_win_get_config(other).relative == '' then
+      if vim.bo[vim.api.nvim_win_get_buf(other)].filetype ~= Window.FILETYPE then return false end
+    end
+  end
+
+  return true
+end
+
+-- vv-dashboard 是可选依赖，缺失时静默跳过（与 mount 的 vv-bufferline 适配同一手法）
+--
+-- 它只有「在当前窗口打开」的语义（内部自己挑窗，没有接收 winid 的入口），因此有三条约束：
+--   ① 调用方必须先把 win 变成 current（见 nvim_win_call），否则内容会落到别的窗口
+--   ② 本 tab 里除 win 外还有别的普通窗口时不尝试：它挑窗的规则不该在这里复刻，
+--      布局不明确就交给下一级兜底，绝不冒险顶掉用户别处的 buffer
+--   ③ 它是跨 tab 单例，已在别处打开时 open() 会先跳到那个窗口再返回；这一跳会触发
+--      TabEnter / WinEnter 等 autocmd，所以必须在调用前用 is_open 拦下，而不是事后比对
+---@param win integer 必须已经是 current window
+---@return boolean handed_over win 的内容确实被换走
+function M.restore_with_dashboard(win)
+  if not vim.api.nvim_win_is_valid(win) then return false end
+  if vim.api.nvim_get_current_win() ~= win then return false end
+  if not is_sole_content_win(win) then return false end
+
+  local ok, dashboard = pcall(require, 'vv-dashboard')
+  if not ok or type(dashboard) ~= 'table' or type(dashboard.open) ~= 'function' then return false end
+  if type(dashboard.is_open) == 'function' and dashboard.is_open() then return false end
+
+  local before = vim.api.nvim_win_get_buf(win)
+  pcall(dashboard.open)
+
+  return vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) ~= before
+end
+
+-- 用一个可 list 的空 [No Name] 顶掉窗口当前内容。被顶掉的 buffer 由调用方决定去留：
+-- 占位窗替换要主动删，属性页 scratch 自带 bufhidden=wipe 会自己回收
+---@param win integer
+---@return integer? replacement 换上去的空 buffer；窗口无效或换 buf 失败时为 nil
+function M.replace_with_blank(win)
+  if not vim.api.nvim_win_is_valid(win) then return nil end
+
+  local replacement = vim.api.nvim_create_buf(true, false)
+  if replacement == 0 then return nil end
+  if not pcall(vim.api.nvim_win_set_buf, win, replacement) then
+    pcall(vim.api.nvim_buf_delete, replacement, { force = true })
+    return nil
+  end
+
+  return replacement
+end
+
 ---@param win integer
 ---@return integer prev_buf
 function M.prepare_main_win(win)
   local prev_buf = vim.api.nvim_win_get_buf(win)
   if not is_replaceable_main_win(win) then return prev_buf end
-
-  local replacement = vim.api.nvim_create_buf(true, false)
-  vim.api.nvim_win_set_buf(win, replacement)
+  if not M.replace_with_blank(win) then return prev_buf end
 
   if vim.api.nvim_buf_is_valid(prev_buf) and #vim.fn.win_findbuf(prev_buf) == 0 then
     pcall(vim.api.nvim_buf_delete, prev_buf, { force = true })

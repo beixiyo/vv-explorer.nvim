@@ -5,6 +5,8 @@
 --
 -- vv-bufferline 是可选依赖，全部交互经本模块的适配函数，缺失时退回 buflisted
 
+local InfoBuf = require('vv-explorer.preview.info_buf')
+
 local M = {}
 
 -- state -> bufnr (weak key，state gc 后自动清理)
@@ -14,11 +16,16 @@ M.preview = setmetatable({}, { __mode = 'k' })
 -- 让 vv-bufferline 按窗口跳过追踪，不能再靠全局 buflisted 表达 preview/fixed
 M.preview_win = setmetatable({}, { __mode = 'k' })
 
--- 预览追踪是「buf + 所属窗口」一对，置空必须成对，避免只清一半留下野引用
+-- state -> bufnr。预览链开始前主窗显示的真实 buffer，用于预览链整体撤销时原样恢复
+-- （而不是回退到空白 buffer）。链内后续替换（如目录 A 换目录 B）不应覆盖它
+M.restore_buf = setmetatable({}, { __mode = 'k' })
+
+-- 预览追踪是「buf + 所属窗口 + 恢复目标」一组，置空必须成组，避免只清一半留下野引用
 ---@param state table
 function M.reset(state)
   M.preview[state] = nil
   M.preview_win[state] = nil
+  M.restore_buf[state] = nil
 end
 
 -- 同样限定在树的 tabpage 内（跨 tab 的同 buf 显示不影响本 tab 的 preview 清理决策）
@@ -91,6 +98,13 @@ end
 function M.mount(state, main, target, opts)
   local old = M.preview[state]
   local old_win = M.preview_win[state]
+
+  -- 「是否链内替换」只能看 cur_buf 本身是不是上一轮的预览产物，不能看 M.preview[state]
+  -- 是否为 nil：主窗被 :e / :bd 等预览系统之外的操作换过之后追踪仍会残留，此时
+  -- old 非 nil 但窗里已经是用户的真实内容，必须刷新恢复目标
+  local cur_is_preview = opts.cur_buf == old
+    or (vim.api.nvim_buf_is_valid(opts.cur_buf) and InfoBuf.is_info(opts.cur_buf))
+  if not cur_is_preview then M.restore_buf[state] = opts.cur_buf end
 
   if old and (old ~= target or opts.is_fixed) then
     M.clear_bufferline(old_win, old, false)

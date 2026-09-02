@@ -209,6 +209,7 @@ Semantics worth knowing:
 - Reaching `max_entries` stops the scan and reports `≥`, instead of walking a huge directory forever
 - Moving the cursor away, opening a file with `<CR>`, or closing the panel **physically cancels** the in-flight scan rather than merely discarding its result
 - Completed results are cached until the filesystem changes (any `watch` fs_event invalidates the whole cache), so returning to the same directory does not rescan
+- **Closing the panel takes the attribute page down with it.** The attribute page is a throwaway scratch buffer, not your content, so the main window never keeps a stale one. It is restored, in order, to: the buffer that was showing before the preview chain started → whatever `restore_main_win` puts there → [vv-dashboard](https://github.com/beixiyo/vv-dashboard.nvim) if it is installed → an empty buffer. The same applies to the binary attribute page
 
 ```lua
 -- Shallow information only, no recursive scan
@@ -222,6 +223,16 @@ opts = { directory_preview = { scan_on_demand = false } }
 
 -- Disable entirely: the main window stays unchanged on directories
 opts = { directory_preview = false }
+
+-- vv-dashboard is picked up automatically when installed; configure this only to
+-- hand the window to something else. Called with the target window as current
+-- window and tabpage, so callbacks that act on "the current window" land in the
+-- right place. Falls back to vv-dashboard, then an empty buffer, if it changes nothing
+opts = {
+  restore_main_win = function(win)
+    require('my-dashboard').open()
+  end,
+}
 ```
 
 ### Executing files (`X`)
