@@ -8,7 +8,7 @@ local Trash = require('vv-explorer.trash')
 local Editor = require('vv-utils.editor')
 local Fs = require('vv-utils.fs')
 local Scroll = require('vv-utils.scroll')
-local ConfirmLifecycle = require('vv-explorer.confirm_lifecycle')
+local DialogLifecycle = require('vv-explorer.dialog_lifecycle')
 
 local L = {}
 
@@ -33,9 +33,9 @@ function L.attach(M, H)
   ---@param state table
   local function after_root_change(state)
     -- root 用对象身份表示一次代际；切根立即关闭所有待确认动作，避免 A→B→A
-    -- 复用旧确认。确认适配器仍会在回调前再次校验，覆盖未经过本入口的切换。
+    -- 复用旧确认。确认适配器仍会在回调前再次校验，覆盖未经过本入口的切换
     state._root_generation = (state._root_generation or 0) + 1
-    ConfirmLifecycle.cancel(state)
+    DialogLifecycle.cancel(state)
 
     if state.git and state.git.refresh then state.git.refresh() end
 
@@ -171,8 +171,8 @@ function L.attach(M, H)
 
   -- 按文件类型执行光标文件：vv-utils.exec 决定命令 → 确认 → 跑（默认分屏终端，可配 run 覆盖）
   function M.execute(state)
-    -- 新的执行请求拥有同一确认槽位；无论后续解析成功与否，都先淘汰旧确认。
-    ConfirmLifecycle.cancel(state)
+    -- 新的执行请求拥有同一确认槽位；无论后续解析成功与否，都先淘汰旧确认
+    DialogLifecycle.cancel(state)
 
     local cfg = state.opts.execute or {}
     if cfg.enabled == false then return end
@@ -207,7 +207,7 @@ function L.attach(M, H)
 
     -- vv-utils.exec 目前只用项目 cwd 标识项目入口。单文件 Go 计划同样带 cwd，
     -- 但 argv 保留源文件路径，因此据此区分确认框中的目标类型。自定义计划可通过
-    -- `target = 'file' | 'project'` 明确指定。
+    -- `target = 'file' | 'project'` 明确指定
     local target = plan.target
     if target ~= 'file' and target ~= 'project' then
       target = plan.cwd and not contains_path(plan.cmd, node.path) and 'project' or 'file'
@@ -279,7 +279,7 @@ function L.attach(M, H)
 
     if cfg.confirm == false then return run() end
 
-    return ConfirmLifecycle.open(state, {
+    return DialogLifecycle.confirm(state, {
       is_current = source_is_current,
       on_confirm = run,
       on_stale = function()
@@ -363,11 +363,12 @@ function L.attach(M, H)
       M.clear_filter(state)
       return
     end
+    if M.sync_clipboard then M.sync_clipboard(state) end
     local has_clipboard = state.clipboard and #state.clipboard.paths > 0
     local has_selection = state.selection and next(state.selection)
     if has_clipboard or has_selection then
-      state.clipboard = nil
       state.selection = {}
+      if has_clipboard then return M.clear_clipboard(state) end
       Render.render(state)
       return
     end

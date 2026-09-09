@@ -9,7 +9,7 @@ local Preview = require('vv-explorer.preview')
 local Render = require('vv-explorer.render')
 local Trash = require('vv-explorer.trash')
 local Tree = require('vv-explorer.tree')
-local ConfirmLifecycle = require('vv-explorer.confirm_lifecycle')
+local DialogLifecycle = require('vv-explorer.dialog_lifecycle')
 local UIWindow = require('vv-utils.ui_window')
 local Watch = require('vv-explorer.watch')
 local Window = require('vv-explorer.window')
@@ -61,7 +61,8 @@ end
 
 local function on_buf_wiped()
   if not state then return end
-  ConfirmLifecycle.cancel(state)
+  DialogLifecycle.cancel(state)
+  pcall(Actions.unsubscribe_clipboard, state)
   pcall(Actions.invalidate_filter_index, state)
   pcall(Watch.detach, state)
   pcall(Preview.detach, state)
@@ -75,7 +76,7 @@ end
 local function close_window_only(opts)
   if not state then return end
   opts = opts or {}
-  ConfirmLifecycle.cancel(state)
+  DialogLifecycle.cancel(state)
   remember_width()
   pcall(Preview.discard_info_preview, state)
   if opts.persist_open ~= false and not is_exiting then
@@ -223,6 +224,7 @@ local function attach_setup_lifecycle()
       remember_width()
       if cancel_width_save then cancel_width_save() end
       if cancel_follow then cancel_follow() end
+      if state then Actions.unsubscribe_clipboard(state) end
     end,
   })
 end
@@ -280,6 +282,8 @@ function M.open(opts)
     state.prev_win = previous_win
     ensure_unique_window()
     state._skip_preview = true
+    Actions.subscribe_clipboard(state)
+    Actions.sync_clipboard(state)
     Tree.refresh(state.root)
     if state.opts and state.opts.diagnostics and state.opts.diagnostics.enabled then
       Diagnostics.refresh(state)
@@ -307,6 +311,9 @@ function M.open(opts)
   state.on_after_render = function(current)
     if current._rescan_watches then current._rescan_watches() end
   end
+
+  Actions.subscribe_clipboard(state)
+  Actions.sync_clipboard(state)
 
   attach_window_lifecycle()
   Mappings.apply(state, {

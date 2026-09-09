@@ -30,6 +30,7 @@ local ACTIONS = {
   yank_abs_path     = { cat = 'Yank',      icon = UIIcons.copy },
   create            = { cat = 'Modify',    icon = UIIcons.new_file },
   delete            = { cat = 'Modify',    icon = '' },
+  force_delete      = { cat = 'Modify',    icon = '' },
   rename            = { cat = 'Modify',    icon = UIIcons.rename },
   copy_mark         = { cat = 'Clipboard', icon = UIIcons.clipboard_copy },
   cut_mark          = { cat = 'Clipboard', icon = UIIcons.clipboard_cut },

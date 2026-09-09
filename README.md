@@ -2,7 +2,7 @@
   <h1>vv-explorer.nvim</h1>
   <p>English | <a href="./README.zh-CN.md">中文</a></p>
   <video muted autoplay loop controls src="https://github.com/user-attachments/assets/d51c28c1-4d21-4d1e-9bba-12dbe13e6669" width="900" title="vv-explorer demo"></video>
-  
+
   <img src="https://github.com/beixiyo/vv-explorer.nvim/releases/download/assets-2026-07-25/vv-explorer.png" alt="vv-explorer demo" width="600" />
   <table>
     <tr>
@@ -124,6 +124,10 @@ opts = {
     scan_on_open = true,       -- Scan trash size asynchronously on startup
   },
 
+  clipboard = {
+    conflict = 'prompt',       -- 'prompt' | 'overwrite' | 'increment'
+  },
+
   global_mappings = {          -- Set to false to disable all global mappings
     toggle = '<leader>E',      -- Simple file-tree toggle
     reveal = '<leader>e',      -- Reveal current file; toggle if already open
@@ -132,6 +136,20 @@ opts = {
   mappings = { ... },          -- Tree-buffer mappings (see the table below)
 }
 ```
+
+### Shared file clipboard
+
+`y` and `x` store absolute paths in `vv-utils.state`, so `p` can paste them from another Neovim instance. Open explorer panels subscribe to that shared state, so clipboard marks disappear without requiring a focus change when another instance consumes the entry. A copy entry is cleared after its first successful paste or when its owner Neovim exits. Cut entries are removed only after their corresponding moves succeed. `<Esc>` clears the shared clipboard when no filter is active.
+
+When a destination already exists, the default `prompt` policy opens a modal with three fixed actions:
+
+- `Ctrl+O` — **Overwrite**: replace the existing file or directory completely
+- `Ctrl+K` — **Keep Both**: generate `name (copy)`, `name (copy 2)`, and so on
+- `q` / `Esc` — **Cancel**: leave the filesystem unchanged
+
+Set `clipboard.conflict` to `overwrite` or `increment` to apply that policy without opening the modal.
+
+For a multi-item copy, one successful item clears the entire copy entry even if other items fail; errors are still reported. If every item fails, the entry is retained. A cut retains only failed items after partial success.
 
 ### Filtering (triggered with `/`)
 
@@ -312,7 +330,8 @@ vim.api.nvim_create_autocmd('User', {
 | `o` / `gx` | `system_open` | Open directory in file manager or file with default application |
 | `X` | `execute` | Execute by file type in a terminal after confirmation |
 | `a` | `create` | Create a file; a trailing `/` creates a directory |
-| `d` | `delete` | Delete / move to trash with confirmation |
+| `d` | `delete` | Move to trash with confirmation; permanently delete when trash is disabled |
+| `D` | `force_delete` | Permanently delete with confirmation, bypassing trash |
 | `r` | `rename` | Rename |
 | `y` | `copy_mark` | Mark for copying |
 | `x` | `cut_mark` | Mark for cutting |
@@ -326,7 +345,7 @@ vim.api.nvim_create_autocmd('User', {
 
 ### Grouped empty-directory chain segments
 
-With `group_empty_dirs = true`, a single-child directory chain such as `test/n1/n2` is merged into one row and operations target the **deepest segment** by default. Use `<C-l>` / `<C-h>` to select a deeper / shallower highlighted level; `a` / `d` / `r` / `y` / `x` / `p` then target that level:
+With `group_empty_dirs = true`, a single-child directory chain such as `test/n1/n2` is merged into one row and operations target the **deepest segment** by default. Use `<C-l>` / `<C-h>` to select a deeper / shallower highlighted level; `a` / `d` / `D` / `r` / `y` / `x` / `p` then target that level:
 
 ```
 test/n1/n2   ← default (deepest segment)

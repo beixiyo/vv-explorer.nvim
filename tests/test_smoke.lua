@@ -93,6 +93,12 @@ test('Y buffer 映射到 yank_abs_path action', function()
   assert(mapping and mapping.desc == 'vv-explorer: yank_abs_path', 'Y buffer mapping missing or points to wrong action')
 end)
 
+test('D buffer 映射到永久删除 action', function()
+  local mapping = find_mapping('n', 'D')
+  assert(mapping and mapping.desc == 'vv-explorer: force_delete',
+    'D buffer mapping missing or points to wrong action')
+end)
+
 test('⇧K buffer 映射到按需目录统计 action', function()
   local mapping = find_mapping('n', 'K')
   assert(mapping and mapping.desc == 'vv-explorer: scan_directory',

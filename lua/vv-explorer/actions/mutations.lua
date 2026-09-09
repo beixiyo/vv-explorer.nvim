@@ -8,7 +8,7 @@ local Trash = require('vv-explorer.trash')
 local Lsp = require('vv-explorer.lsp')
 local Loading = require('vv-utils.loading')
 local Text = require('vv-explorer.text')
-local ConfirmLifecycle = require('vv-explorer.confirm_lifecycle')
+local DialogLifecycle = require('vv-explorer.dialog_lifecycle')
 
 local M = {}
 
@@ -159,13 +159,15 @@ function M.attach(Actions, H, context)
     end)
   end
 
-  function Actions.delete(state)
+  ---@param state table
+  ---@param force boolean
+  local function request_delete(state, force)
     H.ensure_state_fields(state)
-    ConfirmLifecycle.cancel(state)
+    DialogLifecycle.cancel(state)
     local paths = targets(state, context.target_node(state))
     if #paths == 0 then return end
 
-    local use_trash = Trash.enabled()
+    local use_trash = not force and Trash.enabled()
     local verb = use_trash and 'Trash' or 'Delete'
     local snapshots = {}
     for _, path in ipairs(paths) do
@@ -226,7 +228,7 @@ function M.attach(Actions, H, context)
     end
 
     local value = #paths == 1 and vim.fn.fnamemodify(paths[1], ':.') or Text.items(#paths)
-    ConfirmLifecycle.open(state, {
+    DialogLifecycle.confirm(state, {
       title = verb .. (#paths == 1 and ' item?' or ' items?'),
       details = { { label = #paths == 1 and 'Path' or 'Items', value = value } },
       severity = use_trash and 'warn' or 'danger',
@@ -238,6 +240,9 @@ function M.attach(Actions, H, context)
       end,
     })
   end
+
+  function Actions.delete(state) request_delete(state, false) end
+  function Actions.force_delete(state) request_delete(state, true) end
 
   function Actions.rename(state)
     H.ensure_state_fields(state)

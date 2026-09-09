@@ -123,6 +123,10 @@ opts = {
     scan_on_open = true,       -- 启动时异步扫描回收站大小
   },
 
+  clipboard = {
+    conflict = 'prompt',       -- 'prompt' | 'overwrite' | 'increment'
+  },
+
   global_mappings = {          -- 设 false 禁用全部全局键位
     toggle = '<leader>E',      -- 打开/关闭文件树（简单 Toggle）
     reveal = '<leader>e',      -- 定位当前文件（若已打开则 Toggle）
@@ -131,6 +135,20 @@ opts = {
   mappings = { ... },          -- 树内 buffer 键位（见下方键位表）
 }
 ```
+
+### 跨实例文件剪贴板
+
+`y` / `x` 会把绝对路径保存到 `vv-utils.state`，因此可以在另一个 Neovim 实例中按 `p` 粘贴。已打开的 explorer 面板会订阅这份共享状态，所以另一个实例消费记录后，无需切换焦点便会移除复制标记。复制记录会在首次成功粘贴后或所属 Neovim 退出时清除；剪切记录只在对应路径移动成功后移除。没有激活过滤时，`<Esc>` 会清除共享剪贴板
+
+目标已存在时，默认 `prompt` 策略打开包含三个固定动作的 Modal。界面文本统一使用英文：
+
+- `Ctrl+O` — **Overwrite**：完整替换既有文件或目录
+- `Ctrl+K` — **Keep Both**：依次生成 `name (copy)`、`name (copy 2)`
+- `q` / `Esc` — **Cancel**：不修改文件系统
+
+将 `clipboard.conflict` 设为 `overwrite` 或 `increment` 可以跳过 Modal，始终使用对应策略
+
+批量复制只要有一项成功，就会清除整条复制记录，即使其他项失败；失败原因仍会提示。全部失败时保留记录。批量剪切部分成功时只保留失败项
 
 ### 过滤（`/` 键触发）
 
@@ -310,7 +328,8 @@ vim.api.nvim_create_autocmd('User', {
 | `o` / `gx` | `system_open` | 系统工具打开：目录→文件管理器，文件→默认程序 |
 | `X` | `execute` | 按文件类型执行（确认后跑在终端） |
 | `a` | `create` | 新建文件（尾随 `/` 为目录） |
-| `d` | `delete` | 删除 / 移入回收站（带确认） |
+| `d` | `delete` | 移入回收站（带确认）；回收站禁用时永久删除 |
+| `D` | `force_delete` | 跳过回收站并永久删除（带确认） |
 | `r` | `rename` | 重命名 |
 | `y` | `copy_mark` | 标记复制 |
 | `x` | `cut_mark` | 标记剪切 |
@@ -324,7 +343,7 @@ vim.api.nvim_create_autocmd('User', {
 
 ### 折叠空目录链选段（chain segment）
 
-`group_empty_dirs = true` 时单链空目录（如 `test/n1/n2`）合并成一行，操作默认作用于**最深段**。用 `<C-l>` / `<C-h>` 往深 / 往浅选中某一层（高亮显示），之后 `a` / `d` / `r` / `y` / `x` / `p` 都作用于**所选层级**：
+`group_empty_dirs = true` 时单链空目录（如 `test/n1/n2`）合并成一行，操作默认作用于**最深段**。用 `<C-l>` / `<C-h>` 往深 / 往浅选中某一层（高亮显示），之后 `a` / `d` / `D` / `r` / `y` / `x` / `p` 都作用于**所选层级**：
 
 ```
 test/n1/n2   ← 默认（最深段）

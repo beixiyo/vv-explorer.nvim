@@ -17,6 +17,8 @@ package.preload['vv-utils.confirm'] = function()
 end
 
 local calls = { refresh = 0, render = 0, after_fs_change = 0 }
+local trash_enabled = false
+local trash_calls = 0
 package.preload['vv-explorer.tree'] = function()
   return { refresh = function() calls.refresh = calls.refresh + 1 end }
 end
@@ -28,8 +30,12 @@ package.preload['vv-explorer.preview'] = function()
 end
 package.preload['vv-explorer.trash'] = function()
   return {
-    enabled = function() return false end,
-    trash = function() error('trash should not be used in permanent-delete tests') end,
+    enabled = function() return trash_enabled end,
+    trash = function(paths)
+      trash_calls = trash_calls + 1
+      for _, path in ipairs(paths) do vim.fn.delete(path, 'rf') end
+      return { trashed = paths, failed = {} }
+    end,
   }
 end
 package.preload['vv-explorer.lsp'] = function()
@@ -106,6 +112,26 @@ vim.fn.writefile({ 'replacement' }, target)
 pending.on_confirm()
 assert(vim.deep_equal(vim.fn.readfile(target), { 'replacement' }), 'stale delete must preserve the replacement target')
 assert_equal(calls.after_fs_change, 1, 'stale delete must not refresh the explorer')
+
+-- d 在回收站启用时只进入回收站，D 始终绕过回收站永久删除
+trash_enabled = true
+local trash_target = temporary .. '/trash-target.txt'
+vim.fn.writefile({ 'trash target' }, trash_target)
+state.cursor_node = { path = trash_target, name = 'trash-target.txt' }
+Actions.delete(state)
+assert(pending.title == 'Trash item?', 'd should clearly confirm a trash operation')
+pending.on_confirm()
+assert_equal(trash_calls, 1, 'd should use the trash backend when it is enabled')
+assert(vim.fn.filereadable(trash_target) == 0, 'confirmed trash operation should remove the source path')
+
+local force_target = temporary .. '/force-target.txt'
+vim.fn.writefile({ 'force target' }, force_target)
+state.cursor_node = { path = force_target, name = 'force-target.txt' }
+Actions.force_delete(state)
+assert(pending.title == 'Delete item?', 'D should clearly confirm permanent deletion')
+pending.on_confirm()
+assert_equal(trash_calls, 1, 'D must bypass the trash backend')
+assert(vim.fn.filereadable(force_target) == 0, 'confirmed force delete should remove the target permanently')
 
 -- 下面的测试使用真实回收站 store，只替换确认适配，验证 entry 身份和整箱快照
 package.loaded['vv-explorer.trash.panel'] = nil

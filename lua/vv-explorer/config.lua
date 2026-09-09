@@ -43,6 +43,9 @@ local M = {}
 ---@field warn_size_mb integer 打开面板时触发容量提醒的阈值 @default 500
 ---@field scan_on_open boolean 打开 explorer 时检查回收站容量 @default true
 
+---@class VVExplorerClipboardConfig
+---@field conflict 'prompt'|'overwrite'|'increment' 目标已存在时的处理策略 @default 'prompt'
+
 ---@class VVExplorerConfig
 ---@field position 'left'|'right' @default 'left'
 ---@field width integer @default 32
@@ -66,6 +69,7 @@ local M = {}
 ---@field directory_preview VVExplorerDirectoryPreviewConfig|boolean 目录属性预览；设 false 时光标停在目录上不改变主窗 @default { enabled = true, recursive = true, scan_on_demand = true, auto_scan_max_entries = 1000, max_entries = 200000, budget_ms = 8 }
 ---@field execute VVExplorerExecuteConfig|boolean `X` 按文件类型执行光标文件 @default { enabled = true, confirm = true, opts = {} }
 ---@field trash VVExplorerTrashConfig|boolean @default { enabled = true, max_items = 5000, warn_size_mb = 500, scan_on_open = true }
+---@field clipboard VVExplorerClipboardConfig 跨 Neovim 实例共享的文件剪贴板 @default { conflict = 'prompt' }
 ---@field select_move_down boolean 多选时 Tab 切换选中后自动将光标下移一行 @default true
 ---@field lsp_rename_timeout_ms integer rename 时 willRenameFiles 请求的超时毫秒数，超时后继续执行文件重命名 @default 5000
 ---@field global_mappings VVExplorerGlobalMappings|false 全局快捷键（整个 nvim 范围）；设 false 禁用所有 @default { toggle = '<leader>E', reveal = '<leader>e' }
@@ -76,6 +80,7 @@ local M = {}
 ---@field diagnostics VVExplorerDiagnosticsConfig
 ---@field execute VVExplorerExecuteConfig
 ---@field trash VVExplorerTrashConfig
+---@field clipboard VVExplorerClipboardConfig
 ---@field directory_preview VVExplorerDirectoryPreviewConfig
 
 local defaults = {
@@ -144,6 +149,9 @@ local defaults = {
     warn_size_mb = 500,
     scan_on_open = true,
   },
+  clipboard = {
+    conflict = 'prompt',
+  },
   global_mappings = {
     toggle = '<leader>E',
     reveal = '<leader>e',
@@ -191,6 +199,7 @@ local defaults = {
     ['X'] = 'execute',
     ['a'] = 'create',
     ['d'] = 'delete',
+    ['D'] = 'force_delete',
     ['r'] = 'rename',
     ['y'] = 'copy_mark',
     ['x'] = 'cut_mark',
@@ -219,6 +228,11 @@ function M.resolve(opts)
     elseif config[key] == true then
       config[key] = vim.tbl_deep_extend('force', {}, defaults[key])
     end
+  end
+
+  local conflict = config.clipboard and config.clipboard.conflict
+  if conflict ~= 'prompt' and conflict ~= 'overwrite' and conflict ~= 'increment' then
+    error("vv-explorer: clipboard.conflict must be 'prompt', 'overwrite', or 'increment'")
   end
 
   ---@cast config VVExplorerResolvedConfig

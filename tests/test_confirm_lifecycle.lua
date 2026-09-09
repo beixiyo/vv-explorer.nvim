@@ -1,4 +1,4 @@
--- 确认动作生命周期回归：删除 A→B→A、latest-wins 与源窗口关闭
+-- 对话框生命周期回归：删除 A→B→A、latest-wins 与源窗口关闭
 
 local source = debug.getinfo(1, 'S').source:sub(2)
 local root = vim.fn.fnamemodify(source, ':p:h:h')
@@ -91,7 +91,7 @@ assert_equal(calls.refresh, 0, 'stale root confirmation must not refresh the exp
 -- owner 持有的 handle 也必须走统一 cancel，重复 close 不得重复清理
 Actions.delete(state)
 local directly_closed = confirmations[#confirmations]
-local owned_handle = state._confirm_handle
+local owned_handle = state._dialog_handle
 owned_handle.close()
 owned_handle.close()
 assert_equal(directly_closed.close_count, 1, 'owned confirmation handle close must be idempotent')

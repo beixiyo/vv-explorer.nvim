@@ -2,7 +2,8 @@
 
 local source = debug.getinfo(1, 'S').source:sub(2)
 local root = vim.fn.fnamemodify(source, ':p:h:h')
-package.path = root .. '/lua/?.lua;' .. root .. '/lua/?/init.lua;' .. package.path
+local utils = vim.fn.fnamemodify(root, ':h') .. '/vv-utils.nvim'
+package.path = utils .. '/lua/?.lua;' .. utils .. '/lua/?/init.lua;' .. root .. '/lua/?.lua;' .. root .. '/lua/?/init.lua;' .. package.path
 
 for _, name in ipairs({
   'vv-explorer.tree',
