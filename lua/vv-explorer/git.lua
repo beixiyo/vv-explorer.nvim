@@ -28,10 +28,21 @@ function M.attach(state)
   state.git.is_ignored = state.git.is_ignored or function() return false end
   state.git.is_tracked = state.git.is_tracked or function() return false end
 
+  local function panel_visible()
+    return state.win ~= nil and vim.api.nvim_win_is_valid(state.win)
+  end
+
+  -- status / tracked / ignored 是三条并行的线，各自完成时间相差几十毫秒。
+  -- 让它们各画各的会把整棵树重排三次（每次都是全量 set_lines + 重设 extmark），
+  -- 合并成一次即可：16ms 的窗口对眼睛不可见，却能把常见的三次合成一到两次
+  local render_merged, cancel_render = Timer.debounce(function()
+    if state.git ~= git_state or not panel_visible() then return end
+    require('vv-explorer.render').render_stable(state)
+  end, 16)
+
   local function rerender()
-    if state.win and vim.api.nvim_win_is_valid(state.win) then
-      require('vv-explorer.render').render_stable(state)
-    end
+    if not panel_visible() then return end
+    render_merged()
   end
 
   -- status（不含 --ignored）：只拿 modified/added/untracked 等状态标记
@@ -94,10 +105,11 @@ function M.attach(state)
   local refresh_status,  cancel_status  = Timer.debounce(run_status,  DEBOUNCE_MS)
   local refresh_tracked, cancel_tracked = Timer.debounce(run_tracked, DEBOUNCE_MS)
   local refresh_ignored, cancel_ignored = Timer.debounce(run_ignored, DEBOUNCE_MS)
-  state.git._cancels = { cancel_status, cancel_tracked, cancel_ignored }
+  state.git._cancels = { cancel_status, cancel_tracked, cancel_ignored, cancel_render }
 
   state.git.refresh = function(after)
     if state.git ~= git_state then return end
+    git_state._dirty = nil
     local root = state.root.path
     refresh_status(after, begin('status'), root)
     refresh_tracked(begin('tracked'), root)
@@ -112,7 +124,18 @@ function M.attach(state)
   -- 三条 refresh 各自 200ms 去抖，重复/同 tick 的事件会自动合并
   local aug = vim.api.nvim_create_augroup('VVExplorerGitRefresh', { clear = true })
   local function on_external_change()
-    if state.git and state.git.refresh then state.git.refresh() end
+    if not (state.git and state.git.refresh) then return end
+    -- 树窗口不可见时只记账：结果无处可画，三个 git 进程纯属白烧，重新显示时补一次即可。
+    -- 典型场景是 vv-git 打开期间 explorer 被 suspend（窗口关掉、buffer 留着），而 vv-git
+    -- 每完成一次刷新就广播 VVGitStatusChanged
+    --
+    -- 只挡外部事件、不挡 refresh() 本身：refresh() 的契约是「立刻作废在途请求」，
+    -- 在它内部短路会让旧请求继续跑完并写回 state.git（见 tests/test_git_scope.lua）
+    if not panel_visible() then
+      git_state._dirty = true
+      return
+    end
+    state.git.refresh()
   end
   vim.api.nvim_create_autocmd({ 'FocusGained', 'TermClose', 'TermLeave' }, {
     group = aug,
@@ -128,6 +151,14 @@ function M.attach(state)
   run_tracked()
   run_status()
   run_ignored()
+end
+
+--- 面板重新显示时补一次刷新：隐藏期间 refresh 只记了 dirty 没有真正跑
+---@param state table
+function M.refresh_if_dirty(state)
+  local git_state = state and state.git
+  if not git_state or not git_state._dirty or not git_state.refresh then return end
+  git_state.refresh()
 end
 
 ---@param state table

@@ -285,6 +285,7 @@ function M.open(opts)
     Actions.subscribe_clipboard(state)
     Actions.sync_clipboard(state)
     Tree.refresh(state.root)
+    Git.refresh_if_dirty(state)
     if state.opts and state.opts.diagnostics and state.opts.diagnostics.enabled then
       Diagnostics.refresh(state)
     end
