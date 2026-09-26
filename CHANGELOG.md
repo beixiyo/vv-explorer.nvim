@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 - 2026-09-26
+
+### Changed
+
+- **git 状态合并重画**：status / tracked / ignored 三路结果合并成一次重画，打开时的重画次数减半
+- **隐藏时不刷新 git**：vv-git 打开期间 explorer 被收起时不再响应 git 变化广播，重新显示时补一次刷新
+
 ## 0.4.0 - 2026-09-07
 
 ### Added
