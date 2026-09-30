@@ -143,6 +143,13 @@ function M.replace_if_current(expected, mode, paths, opts)
   return updated, validated, validation_error
 end
 
+---记录是否由当前 Neovim 实例写入；只暴露判断，不暴露 owner_id 表示
+---@param record VVExplorerClipboardRecord
+---@return boolean
+function M.is_owned(record)
+  return record.owner_id ~= nil and record.owner_id == owner_id
+end
+
 ---清理由当前 Neovim 实例创建的记录；不会删除其他实例后来写入的记录
 ---@return boolean released
 ---@return string? error_message

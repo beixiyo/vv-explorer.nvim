@@ -8,7 +8,10 @@ vim.opt.runtimepath:prepend(root)
 
 local Transfer = require('vv-explorer.actions.transfer')
 
+-- macOS 的 tempname 位于 /var（指向 /private/var 的符号链接），先解析真实路径，避免与被测代码的 realpath 结果不一致
 local temporary = vim.fn.tempname()
+assert(vim.fn.mkdir(temporary, 'p') == 1)
+temporary = assert(vim.uv.fs_realpath(temporary))
 local sources = temporary .. '/sources'
 local destination = temporary .. '/destination'
 assert(vim.fn.mkdir(sources .. '/widget', 'p') == 1)

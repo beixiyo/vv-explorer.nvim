@@ -71,7 +71,7 @@ local M = {}
 ---@field trash VVExplorerTrashConfig|boolean @default { enabled = true, max_items = 5000, warn_size_mb = 500, scan_on_open = true }
 ---@field clipboard VVExplorerClipboardConfig 跨 Neovim 实例共享的文件剪贴板 @default { conflict = 'prompt' }
 ---@field select_move_down boolean 多选时 Tab 切换选中后自动将光标下移一行 @default true
----@field lsp_rename_timeout_ms integer rename 时 willRenameFiles 请求的超时毫秒数，超时后继续执行文件重命名 @default 5000
+---@field lsp_rename_timeout_ms integer rename 与本实例 cut 粘贴时 willRenameFiles 请求的超时毫秒数（cut 按条目分别计时），超时后继续执行文件移动 @default 5000
 ---@field global_mappings VVExplorerGlobalMappings|false 全局快捷键（整个 nvim 范围）；设 false 禁用所有 @default { toggle = '<leader>E', reveal = '<leader>e' }
 ---@field mappings table<string, string|false|fun(state:table)> 树 buffer 内的 normal 模式键位表；value 可为内置 action 名、false 禁用、或自定义函数（接收 state） @default { ... }
 

@@ -2,6 +2,8 @@
 
 local ClipboardStore = require('vv-explorer.clipboard_store')
 local DialogLifecycle = require('vv-explorer.dialog_lifecycle')
+local Loading = require('vv-utils.loading')
+local Lsp = require('vv-explorer.lsp')
 local PasteConflict = require('vv-explorer.paste_conflict')
 local Render = require('vv-explorer.render')
 local Text = require('vv-explorer.text')
@@ -141,11 +143,8 @@ function M.attach(Actions, H, context)
 
   ---@param state table
   ---@param record VVExplorerClipboardRecord
-  ---@param plan VVExplorerTransferPlan
-  ---@param policy 'overwrite'|'increment'
-  local function execute(state, record, plan, policy)
-    local result = Transfer.execute(plan, policy)
-
+  ---@param result VVExplorerTransferResult
+  local function finish(state, record, result)
     if #result.failed > 0 then
       vim.notify('vv-explorer: paste errors:\n' .. table.concat(result.failed, '\n'), vim.log.levels.ERROR)
     end
@@ -180,6 +179,72 @@ function M.attach(Actions, H, context)
       Render.render(state)
       H.focus_path(state, result.last_dest)
     end
+  end
+
+  ---仅本实例发起的 cut 通知 LSP：跨实例粘贴时本实例的 LSP 与 buffer 不知道源路径
+  ---@param record VVExplorerClipboardRecord
+  ---@return boolean
+  local function should_notify_lsp(record)
+    return record.mode == 'cut'
+      and ClipboardStore.is_owned(record)
+      and #Lsp.will_rename_clients() > 0
+  end
+
+  ---@param state table
+  ---@param record VVExplorerClipboardRecord
+  ---@param plan VVExplorerTransferPlan
+  ---@param policy 'overwrite'|'increment'
+  local function execute(state, record, plan, policy)
+    -- 放在最前：异步粘贴等待期间，即使 LSP 客户端消失，也不能把同一份 plan 再同步执行一遍
+    if state._transferring then
+      vim.notify('vv-explorer: previous paste is still in progress', vim.log.levels.WARN)
+      return
+    end
+
+    if not should_notify_lsp(record) then
+      return finish(state, record, Transfer.execute(plan, policy))
+    end
+    state._transferring = true
+
+    local timeout_ms = state.opts and state.opts.lsp_rename_timeout_ms or 5000
+    ---@type VVExplorerLspPendingEdits?
+    local pending
+
+    Transfer.execute_async(plan, policy, {
+      -- loading 挂在源文件所在行，等待 willRenameFiles 期间该行不渲染 git/诊断图标
+      before_move = function(source, destination, proceed)
+        pending = nil
+        state._lsp_renaming_path = source
+        if vim.api.nvim_buf_is_valid(state.buf) then Render.render(state) end
+        local stop_loading = Loading.start({
+          buf = state.buf,
+          get_row = function() return state.path_to_row and state.path_to_row[source] end,
+        })
+
+        Lsp.will_rename_async(source, destination, timeout_ms, function(timed_out, edits)
+          pending = edits
+          stop_loading()
+          state._lsp_renaming_path = nil
+          if timed_out then
+            vim.notify(
+              ('vv-explorer: LSP willRenameFiles timed out after %dms, proceeding anyway'):format(timeout_ms),
+              vim.log.levels.WARN
+            )
+          end
+          proceed()
+        end)
+      end,
+      -- 顺序与 rename 一致：installer 的 commit 已同步 buffer 名，之后保存 LSP 编辑，最后通知 didRename
+      after_move = function(source, destination, moved)
+        local edits = pending
+        pending = nil
+        if edits then edits.settle(moved) end
+        if moved then Lsp.did_rename(source, destination) end
+      end,
+    }, function(result)
+      state._transferring = nil
+      finish(state, record, result)
+    end)
   end
 
   function Actions.paste(state)

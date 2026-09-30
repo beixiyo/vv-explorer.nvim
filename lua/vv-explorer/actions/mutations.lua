@@ -256,14 +256,17 @@ function M.attach(Actions, H, context)
       local new_path = vim.fs.normalize(vim.fs.dirname(old_path) .. '/' .. new_name)
       local timeout_ms = state.opts and state.opts.lsp_rename_timeout_ms or 5000
 
-      local function finish()
+      ---@param pending? VVExplorerLspPendingEdits willRenameFiles 已应用但未保存的编辑
+      local function finish(pending)
         local ok, err = pcall(Fs.rename, old_path, new_path)
         if not ok then
+          if pending then pending.settle(false) end
           vim.notify('vv-explorer: ' .. tostring(err), vim.log.levels.ERROR)
           return
         end
 
         Fs.sync_buffers(old_path, new_path)
+        if pending then pending.settle(true) end
         Lsp.did_rename(old_path, new_path)
         context.after_fs_change(state)
         Tree.expand_to(state.root, new_path)
@@ -283,7 +286,7 @@ function M.attach(Actions, H, context)
         get_row = function() return state.path_to_row and state.path_to_row[old_path] end,
       })
 
-      Lsp.will_rename_async(old_path, new_path, timeout_ms, function(timed_out)
+      Lsp.will_rename_async(old_path, new_path, timeout_ms, function(timed_out, pending)
         stop_loading()
         state._lsp_renaming_path = nil
         if timed_out then
@@ -292,7 +295,7 @@ function M.attach(Actions, H, context)
             vim.log.levels.WARN
           )
         end
-        finish()
+        finish(pending)
       end)
     end)
   end

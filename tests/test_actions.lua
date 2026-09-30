@@ -173,7 +173,10 @@ assert_equal(state.clipboard.paths[1], first.path, '全部粘贴失败时保留�
 
 state.cursor_node = root_node
 state.row = {}
+-- macOS 的 tempname 位于 /var（指向 /private/var 的符号链接），先解析真实路径，避免与被测代码的 realpath 结果不一致
 local temporary = vim.fn.tempname()
+assert(vim.fn.mkdir(temporary, 'p') == 1)
+temporary = assert(vim.uv.fs_realpath(temporary))
 assert(vim.fn.mkdir(temporary .. '/project', 'p') == 1)
 vim.fn.writefile({ 'source' }, temporary .. '/source.txt')
 vim.fn.writefile({ 'existing' }, temporary .. '/project/source.txt')
