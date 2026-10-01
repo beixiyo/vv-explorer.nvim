@@ -34,20 +34,20 @@ local function run(hooks)
 end
 
 -- 同步 proceed 与异步 proceed 两种路径
-local sync_moved = {}
+local sync_outcomes
 local sync_result = run({
-  before_move = function(_, _, proceed) proceed() end,
-  after_move = function(_, _, moved) sync_moved[#sync_moved + 1] = moved end,
+  before_moves = function(_, proceed) proceed() end,
+  after_moves = function(outcomes) sync_outcomes = outcomes end,
 })
 assert(#sync_result.failed >= 2, 'each failed entry must be reported')
-assert(#sync_moved == 2 and not sync_moved[1] and not sync_moved[2],
-  'after_move must be told the move did not happen so callers can roll back')
+assert(sync_outcomes and #sync_outcomes == 2 and not sync_outcomes[1].moved and not sync_outcomes[2].moved,
+  'after_moves must be told no move happened so callers can roll back')
 
-local async_moved = {}
+local async_outcomes
 run({
-  before_move = function(_, _, proceed) vim.defer_fn(proceed, 10) end,
-  after_move = function(_, _, moved) async_moved[#async_moved + 1] = moved end,
+  before_moves = function(_, proceed) vim.defer_fn(proceed, 10) end,
+  after_moves = function(outcomes) async_outcomes = outcomes end,
 })
-assert(#async_moved == 2, 'async proceed path must also reach after_move for every entry')
+assert(async_outcomes and #async_outcomes == 2, 'async proceed path must also reach after_moves for the whole batch')
 
 vim.fn.delete(temporary, 'rf')

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **cut 粘贴触发 LSP 文件重命名**：本实例发起的 `x` → `p` 会像 `r` 一样先请求 `workspace/willRenameFiles`、移动后发送 `didRenameFiles`，等待期间在源文件行显示 loading。copy、拖放、跨实例 cut 不触发
+- **批量 cut 只发一次 LSP 请求**：`Transfer.execute_async` 先预留整批条目，cut 落盘前后各触发一次 `before_moves(moves, proceed)` / `after_moves(outcomes)`，传输层不依赖 LSP。多个文件合并进同一个 `willRenameFiles` / `didRenameFiles`，服务端返回一份互相一致的编辑，总等待时间不再随条目数累加。整批中只要有一项移动失败，LSP 编辑整体回滚并提示；每个可见的源文件行各显示 loading（上限 30 行）
+- **cut 同批含目录与其子项时只移动目录**：子项不再单独执行，避免 LSP 收到互相矛盾的 rename；目录移动成功后子项一并视为完成，不会残留在剪切剪贴板里
+
+### Changed
+
+- **LSP 重命名编辑改为移动成功后保存**：`r` 与 cut 共用；willRenameFiles 编辑先只应用到 buffer，文件移动成功后再保存原本没有未保存修改的目标并清理临时 buffer，失败则只回滚 buffer、不写盘（不会在旧路径复活已移走的文件，也不重写用户有未保存修改的文件）；保存前确认文件可写、磁盘内容仍是编辑前的、已加载的 buffer 没有落后于磁盘，任一不满足就不保存并提示；buffer 已随文件改名时才用 `write!`（普通 `:write` 会 E13），未改名的仍走普通 `:write`。此前编辑不保存，未打开的文件会留成隐藏的 modified buffer；若在移动前保存，编辑到被移动文件自身时会让 cut 的源快照复验失败。已有未保存修改的 buffer 不会被自动写盘并会提示
+
 ## 0.4.1 - 2026-09-26
 
 ### Changed

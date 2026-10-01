@@ -12,6 +12,9 @@ local Tree = require('vv-explorer.tree')
 
 local M = {}
 
+---等待 LSP 时最多同时显示 loading 的行数，避免批量剪切时创建过多 timer
+local MAX_LOADING_ROWS = 30
+
 local function notify_store_error(error_message)
   vim.notify('vv-explorer: ' .. error_message, vim.log.levels.ERROR)
 end
@@ -209,22 +212,49 @@ function M.attach(Actions, H, context)
     local timeout_ms = state.opts and state.opts.lsp_rename_timeout_ms or 5000
     ---@type VVExplorerLspPendingEdits?
     local pending
+    local stops = {}
+    local finished = false
+
+    -- 幂等：LSP 回调与 on_done 都会调用；before_moves 中途抛错时 LSP 回调不会触发，只能靠 on_done 兜底
+    local function clear_loading()
+      for _, stop in ipairs(stops) do stop() end
+      stops = {}
+      state._lsp_renaming = nil
+    end
 
     Transfer.execute_async(plan, policy, {
-      -- loading 挂在源文件所在行，等待 willRenameFiles 期间该行不渲染 git/诊断图标
-      before_move = function(source, destination, proceed)
+      -- 整批只发一次 willRenameFiles；loading 挂在每个可见的源文件行，
+      -- 等待期间这些行不渲染 git/诊断图标
+      before_moves = function(moves, proceed)
         pending = nil
-        state._lsp_renaming_path = source
+        local renames, renaming = {}, {}
+        for _, move in ipairs(moves) do
+          renames[#renames + 1] = { old_path = move.source, new_path = move.destination }
+          renaming[move.source] = true
+        end
+        state._lsp_renaming = renaming
         if vim.api.nvim_buf_is_valid(state.buf) then Render.render(state) end
-        local stop_loading = Loading.start({
-          buf = state.buf,
-          get_row = function() return state.path_to_row and state.path_to_row[source] end,
-        })
 
-        Lsp.will_rename_async(source, destination, timeout_ms, function(timed_out, edits)
+        local visible = 0
+        for _, move in ipairs(moves) do
+          if visible >= MAX_LOADING_ROWS then break end
+          if state.path_to_row and state.path_to_row[move.source] then
+            visible = visible + 1
+            stops[#stops + 1] = Loading.start({
+              buf = state.buf,
+              get_row = function() return state.path_to_row and state.path_to_row[move.source] end,
+            })
+          end
+        end
+
+        Lsp.will_rename_many_async(renames, timeout_ms, function(timed_out, edits)
+          -- 整批已经落盘收尾后才到达的编辑没人会 settle，直接回滚，避免留下隐藏的 modified buffer
+          if finished then
+            if edits then edits.settle(false) end
+            return
+          end
           pending = edits
-          stop_loading()
-          state._lsp_renaming_path = nil
+          clear_loading()
           if timed_out then
             vim.notify(
               ('vv-explorer: LSP willRenameFiles timed out after %dms, proceeding anyway'):format(timeout_ms),
@@ -235,13 +265,31 @@ function M.attach(Actions, H, context)
         end)
       end,
       -- 顺序与 rename 一致：installer 的 commit 已同步 buffer 名，之后保存 LSP 编辑，最后通知 didRename
-      after_move = function(source, destination, moved)
+      after_moves = function(outcomes)
         local edits = pending
         pending = nil
-        if edits then edits.settle(moved) end
-        if moved then Lsp.did_rename(source, destination) end
+
+        local moved_renames, all_moved = {}, true
+        for _, outcome in ipairs(outcomes) do
+          if outcome.moved then
+            moved_renames[#moved_renames + 1] = { old_path = outcome.source, new_path = outcome.destination }
+          else
+            all_moved = false
+          end
+        end
+
+        -- 编辑是按「整批都会移动」计算的：只要有一项失败，其余 import 就可能指向不存在的路径，
+        -- 无法只保留部分编辑，因此整体回滚，宁可让已移动文件的 import 保持旧值
+        if edits then edits.settle(all_moved) end
+        if edits and not all_moved and #moved_renames > 0 then
+          vim.notify('vv-explorer: some moves failed; LSP import edits were rolled back, '
+            .. 'imports of the moved files were not updated', vim.log.levels.WARN)
+        end
+        Lsp.did_rename_many(moved_renames)
       end,
     }, function(result)
+      finished = true
+      clear_loading()
       state._transferring = nil
       finish(state, record, result)
     end)

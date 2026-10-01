@@ -201,10 +201,10 @@ function M.render(state)
 
   local git = state.git
   local diag = state.diagnostics
-  local renaming_path = state._lsp_renaming_path
+  local renaming = state._lsp_renaming
   for _, row in ipairs(rows) do
     local node = row.node
-    local is_renaming = renaming_path and node.path == renaming_path
+    local is_renaming = renaming and renaming[node.path]
     local git_sym = (not is_renaming) and git and git.status_map and Git.symbol_for(git.status_map[node.path])
     local diag_sym = (not is_renaming) and diag and Diagnostics.symbol_for(diag[node.path])
     local line, ems, name_col = build_row_visual({
@@ -412,7 +412,7 @@ function M.render_filter(state)
 
     local git = state.git
     local diag = state.diagnostics
-    local is_renaming = state._lsp_renaming_path and path == state._lsp_renaming_path
+    local is_renaming = state._lsp_renaming and state._lsp_renaming[path]
     local git_sym = (not is_renaming) and git and git.status_map and Git.symbol_for(git.status_map[path])
     local diag_sym = (not is_renaming) and diag and Diagnostics.symbol_for(diag[path])
     local line, ems, name_col = build_row_visual({

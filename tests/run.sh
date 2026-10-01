@@ -21,11 +21,19 @@ fi
 for test_file in "$tests_dir"/test_*.lua; do
   test_name=$(basename -- "$test_file")
   printf '%sRUN%s: %s\n' "$cyan" "$reset" "$test_name"
-  if "$nvim_bin" --headless -u NONE -l "$test_file"; then
+  marker=$(mktemp)
+  rm -f "$marker"
+  status=0
+  "$nvim_bin" --headless -u NONE -l "$tests_dir/run_one.lua" "$test_file" "$marker" || status=$?
+  if [ "$status" -eq 0 ] && [ ! -f "$marker" ]; then
+    printf '%s测试未跑完就退出了（退出码 0 但没有完成标记）%s\n' "$red" "$reset" >&2
+    status=1
+  fi
+  rm -f "$marker"
+  if [ "$status" -eq 0 ]; then
     passed=$((passed + 1))
     printf '%sPASS%s: %s\n' "$green" "$reset" "$test_name"
   else
-    status=$?
     printf '%sFAIL%s: %s\n' "$red" "$reset" "$test_name" >&2
     exit "$status"
   fi

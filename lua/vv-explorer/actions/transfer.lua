@@ -21,6 +21,7 @@ local M = {}
 ---@field entries VVExplorerTransferEntry[]
 ---@field failed string[]
 ---@field conflicts integer
+---@field covered table<string, string[]> cut 时被另一个已选源路径包含的子项，key 为包含它的源路径；不单独执行，包含者移动成功后视为已完成
 
 ---@param paths string[]
 ---@param destination_dir string
@@ -29,18 +30,20 @@ local M = {}
 function M.plan(paths, destination_dir, mode)
   assert(mode == 'copy' or mode == 'cut', "transfer mode must be 'copy' or 'cut'")
   destination_dir = Paths.normalize(destination_dir)
-  local plan = { mode = mode, destination_dir = destination_dir, entries = {}, failed = {}, conflicts = 0 }
+  local plan = { mode = mode, destination_dir = destination_dir, entries = {}, failed = {}, conflicts = 0, covered = {} }
   local destinations = {}
   local destination_identity = Paths.identity(destination_dir)
+  local entry_sources = {}
 
-  for _, raw_source in ipairs(paths) do
-    local source = Paths.normalize(raw_source)
+  ---@param source string
+  local function plan_source(source)
     local destination = vim.fs.joinpath(destination_dir, vim.fs.basename(source))
     local destination_path = Paths.operation_path(destination)
     -- A symlink source is copied as a link by Fs.copy, so its target is not a
     -- recursive source subtree.  Use the lexical link path for this check;
     -- regular directories still use their resolved filesystem identity.
     local source_identity = Paths.is_symlink(source) and source or Paths.identity(source)
+
     if Paths.under(destination_identity, source_identity) then
       plan.failed[#plan.failed + 1] = 'skip: ' .. source .. ' → inside itself'
     elseif destinations[destination_path] then
@@ -67,17 +70,71 @@ function M.plan(paths, destination_dir, mode)
             destination_snapshot = destination_snapshot,
             conflict = conflict,
           }
+          entry_sources[#entry_sources + 1] = source
         end
       end
     end
   end
 
+  -- cut 时目录及其子项同批出现：只移动目录。子项若也执行，会向 LSP 发出互相矛盾的 rename，
+  -- 且目录移走后子项的源快照必然失效。
+  --
+  -- 由外向内处理：只有祖先「已成为条目」，子项才算被覆盖——祖先在规划阶段就失败（如粘进自身）时，
+  -- 子项仍应独立执行；先处理外层也保证子项挂到最外层祖先，而不是中间层。
+  -- 祖先是符号链接时不覆盖：移动链接不会带走它指向的目录里的内容
+  local ordered = {}
+  for index, raw_source in ipairs(paths) do
+    local source = Paths.normalize(raw_source)
+    local _, depth = source:gsub('/', '')
+    ordered[#ordered + 1] = { source = source, index = index, depth = depth }
+  end
+  table.sort(ordered, function(left, right)
+    -- copy 不去重，保持用户选择的顺序：同名冲突时谁先被规划谁胜出，行为与去重引入前一致
+    if mode == 'cut' and left.depth ~= right.depth then return left.depth < right.depth end
+    return left.index < right.index
+  end)
+  local order = {}
+  for _, item in ipairs(ordered) do
+    if order[item.source] == nil then order[item.source] = item.index end
+  end
+
+  for _, item in ipairs(ordered) do
+    local container
+    if mode == 'cut' then
+      for _, entry_source in ipairs(entry_sources) do
+        if entry_source ~= item.source and Paths.under(item.source, entry_source)
+          and not Paths.is_symlink(entry_source)
+        then
+          container = entry_source
+          break
+        end
+      end
+    end
+
+    if container then
+      plan.covered[container] = plan.covered[container] or {}
+      table.insert(plan.covered[container], item.source)
+    else
+      plan_source(item.source)
+    end
+  end
+
+  -- 处理顺序是由外向内，输出仍按用户选择的顺序，粘贴结果与焦点才可预期
+  table.sort(plan.entries, function(left, right) return order[left.source] < order[right.source] end)
+
   return plan
 end
 
+---@class VVExplorerTransferMove
+---@field source string
+---@field destination string 最终逻辑路径（increment 后可能与 entry.destination 不同）
+
+---@class VVExplorerTransferMoveOutcome : VVExplorerTransferMove
+---@field moved boolean
+
 ---@class VVExplorerTransferHooks
----@field before_move? fun(source: string, destination: string, proceed: fun()) cut 落盘前调用；destination 为最终逻辑路径，异步完成后必须调用 proceed；抛错视为已 proceed
----@field after_move? fun(source: string, destination: string, moved: boolean) cut 落盘尝试结束后调用（无论成败，只要调用过 before_move 的同一条目都会走到这里）；抛错会被忽略
+---@field before_moves? fun(moves: VVExplorerTransferMove[], proceed: fun()) cut 落盘前对**整批**调用一次；异步完成后必须调用 proceed；抛错视为已 proceed
+---@field after_moves? fun(outcomes: VVExplorerTransferMoveOutcome[]) 整批落盘尝试结束后调用（无论成败）；抛错会被忽略
 
 ---@class VVExplorerTransferResult
 ---@field last_dest string?
@@ -204,6 +261,9 @@ local function prepare_entry(plan, policy, entry, reserved, result)
         result.last_dest = logical_destination
         result.completed = result.completed + 1
         result.completed_sources[#result.completed_sources + 1] = entry.source
+        for _, covered in ipairs(plan.covered and plan.covered[entry.source] or {}) do
+          result.completed_sources[#result.completed_sources + 1] = covered
+        end
         if warning_or_error then result.warnings[#result.warnings + 1] = warning_or_error end
         return true
       end
@@ -245,9 +305,10 @@ function M.execute(plan, policy)
   return result
 end
 
----按条目串行执行，cut 在每条落盘前后触发 hooks；用于需要异步等待外部系统（如 LSP）的场景
+---先预留全部条目，cut 在整批落盘前后各触发一次 hooks；用于需要异步等待外部系统（如 LSP）的场景
 ---
----调用方负责防止并发调用和 UI 过期回写
+---整批一起交给外部系统，才能合并成一个请求；代价是等待期间所有目标都处于预留状态。
+---调用方负责防止并发调用和 UI 过期回写。on_done 恒被异步调用一次
 ---@param plan VVExplorerTransferPlan
 ---@param policy 'overwrite'|'increment'
 ---@param hooks VVExplorerTransferHooks
@@ -256,48 +317,54 @@ function M.execute_async(plan, policy, hooks, on_done)
   check_args(plan, policy)
   local result = new_result(plan)
   local reserved = {}
-  local index = 0
-  local step
 
-  ---proceed 可能被同步调用，统一 schedule，避免多条目时 pcall 嵌套过深
-  local function next_entry() vim.schedule(step) end
-
-  step = function()
-    index = index + 1
-    local entry = plan.entries[index]
-    if not entry then return on_done(result) end
-
-    local prepared_ok, prepared = pcall(prepare_entry, plan, policy, entry, reserved, result)
-    if not prepared_ok then
+  ---@type VVExplorerPreparedTransfer[]
+  local prepared_list = {}
+  for _, entry in ipairs(plan.entries) do
+    local ok, prepared = pcall(prepare_entry, plan, policy, entry, reserved, result)
+    if not ok then
       result.failed[#result.failed + 1] = tostring(prepared)
-      return next_entry()
+    elseif prepared then
+      prepared_list[#prepared_list + 1] = prepared
     end
-    if not prepared then return next_entry() end
+  end
 
-    local settled = false
-    local function proceed()
-      if settled then return end
-      settled = true
+  -- 只有 proceed 会调度 run，且 proceed 自带幂等守卫，run 天然只执行一次
+  local function run()
+    local outcomes = {}
+    for _, prepared in ipairs(prepared_list) do
       local commit_ok, moved = pcall(prepared.commit)
       if not commit_ok then
         result.failed[#result.failed + 1] = tostring(moved)
         moved = false
       end
-      if plan.mode == 'cut' and hooks.after_move then
-        pcall(hooks.after_move, prepared.source, prepared.destination, moved)
-      end
-      next_entry()
+      outcomes[#outcomes + 1] = { source = prepared.source, destination = prepared.destination, moved = moved }
     end
 
-    if plan.mode == 'cut' and hooks.before_move then
-      local ok = pcall(hooks.before_move, prepared.source, prepared.destination, proceed)
-      if not ok then proceed() end
-    else
-      proceed()
+    if plan.mode == 'cut' and hooks.after_moves and #outcomes > 0 then
+      pcall(hooks.after_moves, outcomes)
     end
+    on_done(result)
   end
 
-  step()
+  -- proceed 可能被同步调用，统一 schedule，保证 on_done 恒为异步
+  local proceeded = false
+  local function proceed()
+    if proceeded then return end
+    proceeded = true
+    vim.schedule(run)
+  end
+
+  if plan.mode == 'cut' and hooks.before_moves and #prepared_list > 0 then
+    local moves = {}
+    for _, prepared in ipairs(prepared_list) do
+      moves[#moves + 1] = { source = prepared.source, destination = prepared.destination }
+    end
+    local ok = pcall(hooks.before_moves, moves, proceed)
+    if not ok then proceed() end
+  else
+    proceed()
+  end
 end
 
 ---拖放仍使用无交互的递增策略

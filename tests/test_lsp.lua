@@ -29,15 +29,15 @@ local function text_edit(path, line)
 end
 
 local fixture_clients = { { name = 'fixture-lsp' } }
-local edit_lines
+local requests = {}
 package.loaded['vv-utils.lsp.file_operations'] = {
   clients = function() return fixture_clients end,
-  will_rename_async = function(_, _, _, on_done)
+  will_rename_many_async = function(renames, _, on_done)
+    requests[#requests + 1] = renames
     local changes = vim.tbl_extend('error', text_edit(unopened, 0), text_edit(moved_file, 0), text_edit(dirty, 1))
-    edit_lines = changes
     on_done({ { edit = { changes = changes }, encoding = 'utf-16' } }, false)
   end,
-  notify_did_rename = function() end,
+  notify_did_rename_many = function() end,
 }
 
 local Lsp = require('vv-explorer.lsp')
@@ -65,7 +65,8 @@ assert(loaded_buf(unopened), 'edit must be applied into a buffer')
 pending.settle(false)
 assert(disk(unopened) == 'import "./old"', 'rollback must leave disk unchanged')
 assert(not loaded_buf(unopened), 'rollback must remove temporary buffers')
-assert(vim.api.nvim_buf_get_lines(dirty_buf, 0, -1, false)[1] == 'user unsaved edit',
+local restored_lines = vim.api.nvim_buf_get_lines(dirty_buf, 0, -1, false)
+assert(restored_lines[1] == 'user unsaved edit' and restored_lines[2] == 'import "./old"',
   'rollback must restore the dirty buffer to its state before the edit')
 assert(vim.bo[dirty_buf].modified, 'rollback must keep the user unsaved state')
 pending.settle(true) -- 幂等：已 settle 后再调用不能生效
@@ -86,6 +87,19 @@ assert(disk(dirty) == 'import "./old"', 'a buffer with pre-existing user edits m
 assert(vim.bo[dirty_buf].modified, 'dirty buffer must stay modified')
 assert(#notified == 1 and notified[1][1]:find('unsaved changes', 1, true),
   'user must be told that a dirty buffer was edited but not saved')
+
+-- 4) 多个文件必须合并成一次请求，且 renames 原样透传
+requests = {}
+local timed_out, batch_pending
+Lsp.will_rename_many_async({
+  { old_path = '/x/a.ts', new_path = '/x/sub/a.ts' },
+  { old_path = '/x/b.ts', new_path = '/x/sub/b.ts' },
+}, 1000, function(t, p) timed_out, batch_pending = t, p end)
+assert(#requests == 1 and #requests[1] == 2, 'a batch must issue exactly one request carrying every file')
+assert(requests[1][2].new_path == '/x/sub/b.ts')
+assert(timed_out == false and batch_pending)
+batch_pending.settle(false) -- 批量里只要有一项没移动成功，调用方就整体回滚
+assert(not loaded_buf(unopened), 'partial-failure rollback must remove temporary buffers')
 
 vim.fn.delete(temporary, 'rf')
 print('vv-explorer LSP adapter test: ok')

@@ -279,7 +279,7 @@ function M.attach(Actions, H, context)
         return
       end
 
-      state._lsp_renaming_path = old_path
+      state._lsp_renaming = { [old_path] = true }
       Render.render(state)
       local stop_loading = Loading.start({
         buf = state.buf,
@@ -288,7 +288,7 @@ function M.attach(Actions, H, context)
 
       Lsp.will_rename_async(old_path, new_path, timeout_ms, function(timed_out, pending)
         stop_loading()
-        state._lsp_renaming_path = nil
+        state._lsp_renaming = nil
         if timed_out then
           vim.notify(
             ('vv-explorer: LSP willRenameFiles timed out after %dms, proceeding anyway'):format(timeout_ms),
