@@ -7,6 +7,9 @@ local WorkspaceEdit = require('vv-utils.lsp.workspace_edit')
 
 local M = {}
 
+---通知里最多列出的被更新文件数
+local MAX_LISTED_FILES = 8
+
 ---返回当前支持 workspace/willRenameFiles 的客户端列表
 ---@return vim.lsp.Client[]
 function M.will_rename_clients()
@@ -18,7 +21,6 @@ end
 
 ---@class VVExplorerLspEditTarget
 ---@field bufnr integer
----@field path string 应用编辑时的文件路径；buffer 名与它不同说明 buffer 已被 Fs.sync_buffers 改名
 ---@field temporary boolean 应用前文件未加载，buffer 由 WorkspaceEdit 临时创建
 ---@field listed_unloaded boolean 应用前 buffer 已存在但未加载（会话恢复、:badd），结束后只能卸载，不能 wipe
 ---@field lines? string[] 应用前的 buffer 内容（仅原本已加载的目标）
@@ -33,7 +35,6 @@ local function collect_targets(transaction, listed_unloaded)
   for _, state in pairs(transaction.states or {}) do
     targets[#targets + 1] = {
       bufnr = state.bufnr or vim.uri_to_bufnr(state.uri),
-      path = state.path,
       temporary = state.bufnr == nil,
       listed_unloaded = listed_unloaded[state.uri] == true,
       lines = state.lines,
@@ -112,8 +113,11 @@ end
 ---保存单个目标；返回是否成功
 ---
 ---失败的理由都宁可少存也不冒险覆盖：只读文件、磁盘已被外部改过、已加载的 buffer 本就落后于磁盘。
----buffer 已被 Fs.sync_buffers 改到新路径时，对已存在的文件 `:write` 会报 E13，只有这时才用
----`write!`；没改名的 buffer 保留普通 `:write`，让 Neovim 自己的「文件已被改动」检查继续生效
+---
+---一律用 `write!`。LSP 编辑使 buffer 处于已修改状态，而 Fs.sync_buffers 从不重读已修改的 buffer，
+---改名带来的 notedited 仍在，普通 `:write` 会 E13；没改名的 buffer 用普通 `:write` 则会在文件只是被
+---touch 过（内容不变）时弹出阻塞式 y/n 提示。`write!` 会跳过 Neovim 自己的只读与「文件已被改动」检查，
+---所以下面几道检查是**唯一防线**，不是冗余保险：readonly / fs_access / 磁盘内容比对 / buffer 与磁盘一致性
 ---@param target VVExplorerLspEditTarget
 ---@return boolean
 local function save_target(target)
@@ -121,14 +125,30 @@ local function save_target(target)
   if vim.bo[bufnr].readonly then return false end
 
   local name = vim.api.nvim_buf_get_name(bufnr)
-  -- readonly 选项只反映加载时的权限；buffer 加载之后文件才被改成只读时，write! 会照样写穿
+  -- readonly 选项只反映加载时的权限；加载之后才被 chmod 成只读时它仍是 false，write! 会照样写穿
   if not vim.uv.fs_access(name, 'W') then return false end
   if target.disk_content == nil or read_file(name) ~= target.disk_content then return false end
   if target.lines and not same_as_disk(target.lines, target.disk_content) then return false end
 
-  local command = name ~= target.path and 'silent noautocmd write!' or 'silent noautocmd write'
-  local ok = pcall(vim.api.nvim_buf_call, bufnr, function() vim.cmd(command) end)
+  local ok = pcall(vim.api.nvim_buf_call, bufnr, function() vim.cmd('silent noautocmd write!') end)
   return ok and not vim.bo[bufnr].modified
+end
+
+---LSP 因文件改名改写了其它文件时告知用户：这些改动是自动保存的，不通知的话用户可能永远不知道
+---@param names string[] 已保存的文件
+local function notify_updated(names)
+  if #names == 0 then return end
+
+  table.sort(names)
+  local lines = { ('vv-explorer: LSP updated references in %d file(s):'):format(#names) }
+  for index, name in ipairs(names) do
+    if index > MAX_LISTED_FILES then
+      lines[#lines + 1] = ('  … and %d more'):format(#names - MAX_LISTED_FILES)
+      break
+    end
+    lines[#lines + 1] = '  ' .. vim.fn.fnamemodify(name, ':~:.')
+  end
+  vim.notify(table.concat(lines, '\n'), vim.log.levels.INFO)
 end
 
 ---@param targets VVExplorerLspEditTarget[]
@@ -139,15 +159,21 @@ local function settle_edits(targets, moved)
     return
   end
 
-  local unsaved, failed = 0, {}
+  local unsaved, failed, saved = 0, {}, {}
   for _, target in ipairs(targets) do
     local bufnr = target.bufnr
     if not vim.api.nvim_buf_is_valid(bufnr) then goto continue end
 
+    -- 保存之后临时 buffer 可能被丢弃，名字要先取
+    local name = vim.api.nvim_buf_get_name(bufnr)
     if target.modified then
       unsaved = unsaved + 1
-    elseif vim.bo[bufnr].modified and not save_target(target) then
-      failed[#failed + 1] = vim.api.nvim_buf_get_name(bufnr)
+    elseif vim.bo[bufnr].modified then
+      if save_target(target) then
+        saved[#saved + 1] = name
+      else
+        failed[#failed + 1] = name
+      end
     end
 
     if target.temporary and not vim.bo[bufnr].modified and #vim.fn.win_findbuf(bufnr) == 0 then
@@ -156,6 +182,7 @@ local function settle_edits(targets, moved)
     ::continue::
   end
 
+  notify_updated(saved)
   if #failed > 0 then
     vim.notify('vv-explorer: LSP edits were applied but not saved:\n' .. table.concat(failed, '\n'), vim.log.levels.WARN)
   end
@@ -223,6 +250,33 @@ function M.will_rename_many_async(renames, timeout_ms, on_done)
   end)
 end
 
+---把整批移动结果映射成 LSP 收尾动作：编辑整体 settle、必要时 WARN、只对已移动的条目发 didRename
+---
+---编辑是按「整批都会移动」计算的：只要有一项失败，其余 import 就可能指向不存在的路径，
+---无法只保留部分编辑，因此整体回滚，宁可让已移动文件的 import 保持旧值
+---@param pending VVExplorerLspPendingEdits? willRenameFiles 产生的待收尾编辑；没有编辑时为 nil
+---@param outcomes { source: string, destination: string, moved: boolean }[]
+---@return VVExplorerLspBatchSettlement
+function M.settle_batch(pending, outcomes)
+  local moved_renames, all_moved = {}, true
+  for _, outcome in ipairs(outcomes) do
+    if outcome.moved then
+      moved_renames[#moved_renames + 1] = { old_path = outcome.source, new_path = outcome.destination }
+    else
+      all_moved = false
+    end
+  end
+
+  if pending then pending.settle(all_moved) end
+  if pending and not all_moved and #moved_renames > 0 then
+    vim.notify('vv-explorer: some moves failed; LSP import edits were rolled back, '
+      .. 'imports of the moved files were not updated', vim.log.levels.WARN)
+  end
+  M.did_rename_many(moved_renames)
+
+  return { all_moved = all_moved, moved_renames = moved_renames }
+end
+
 ---单个文件的 willRenameFiles，语义同 will_rename_many_async
 ---@param old_path string
 ---@param new_path string
@@ -244,5 +298,9 @@ end
 function M.did_rename_many(renames)
   FileOperations.notify_did_rename_many(renames)
 end
+
+---@class VVExplorerLspBatchSettlement
+---@field all_moved boolean 整批是否全部移动成功；决定编辑是保存还是回滚
+---@field moved_renames VVLspFileRename[] 已发送 didRename 的条目（仅已移动）
 
 return M

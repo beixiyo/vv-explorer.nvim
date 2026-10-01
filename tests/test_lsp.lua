@@ -85,8 +85,24 @@ assert(disk(moved_file) == 'import "./new"', 'edited moved file must be saved to
 assert(not loaded_buf(unopened) and not loaded_buf(moved_file), 'temporary buffers must be cleaned up after saving')
 assert(disk(dirty) == 'import "./old"', 'a buffer with pre-existing user edits must not be saved implicitly')
 assert(vim.bo[dirty_buf].modified, 'dirty buffer must stay modified')
-assert(#notified == 1 and notified[1][1]:find('unsaved changes', 1, true),
+local function notices_at(level)
+  local found = {}
+  for _, note in ipairs(notified) do
+    if note[2] == level then found[#found + 1] = note[1] end
+  end
+  return found
+end
+
+local warnings = notices_at(vim.log.levels.WARN)
+assert(#warnings == 1 and warnings[1]:find('unsaved changes', 1, true),
   'user must be told that a dirty buffer was edited but not saved')
+
+-- 被自动保存的文件必须告知用户，否则没打开的文件被改了他永远不知道
+local infos = notices_at(vim.log.levels.INFO)
+assert(#infos == 1 and infos[1]:find('updated references in 2 file(s)', 1, true),
+  'user must be told which files were rewritten and saved by LSP, got: ' .. vim.inspect(infos))
+assert(infos[1]:find('unopened.ts', 1, true) and infos[1]:find('moved.ts', 1, true), 'the notice must name the saved files')
+assert(not infos[1]:find('dirty.ts', 1, true), 'a buffer that was not saved must not be listed as updated')
 
 -- 4) 多个文件必须合并成一次请求，且 renames 原样透传
 requests = {}

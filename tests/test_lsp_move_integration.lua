@@ -2,7 +2,8 @@
 --
 -- 真实的：Transfer.execute_async / Installer / Fs.sync_buffers / WorkspaceEdit / 磁盘。
 -- 桩掉的：LSP 客户端请求（返回固定 WorkspaceEdit）
--- 不覆盖：clipboard.lua 里「有一项失败就整体回滚」的策略本身，这里在 after_moves 里复刻了同样的判断
+-- after_moves 直接调用公开的 Lsp.settle_batch（clipboard.lua 同款），「有一项失败就整体回滚」的策略由它承担，
+-- 这里只验证它与真实移动结果组合后的磁盘 / buffer 效果；clipboard.lua 的 UI 流程不在此覆盖
 
 local source = debug.getinfo(1, 'S').source:sub(2)
 local root = vim.fn.fnamemodify(source, ':p:h:h')
@@ -66,7 +67,8 @@ local function new_fixture(name)
 end
 
 ---@param sabotage_b? boolean 在 LSP 编辑应用之后、落盘之前改动 b.ts，让它的 commit 因源快照变化而失败
-local function run(f, sabotage_b)
+---@param between_commit_and_settle? fun(outcomes: table[]) 落盘之后、收尾之前执行，用来模拟这个窗口里的外部改动
+local function run(f, sabotage_b, between_commit_and_settle)
   local plan = Transfer.plan({ f.src .. '/a.ts', f.src .. '/b.ts' }, f.dst, 'cut')
   local pending
   local outcomes_seen
@@ -83,9 +85,8 @@ local function run(f, sabotage_b)
     end,
     after_moves = function(outcomes)
       outcomes_seen = outcomes
-      local all_moved = true
-      for _, outcome in ipairs(outcomes) do all_moved = all_moved and outcome.moved end
-      if pending then pending.settle(all_moved) end
+      if between_commit_and_settle then between_commit_and_settle(outcomes) end
+      Lsp.settle_batch(pending, outcomes)
     end,
   }, function(r) result = r end)
   assert(vim.wait(3000, function() return result ~= nil end), 'execute_async must finish')
@@ -144,7 +145,7 @@ assert(vim.fn.readfile(f.other)[2] == '// external change',
   'a stale buffer must not overwrite changes made to the file by another process')
 assert(table.concat(notices, '\n'):find('not saved', 1, true), 'the user must be told the edit was not saved')
 
--- 场景 4：只读文件不能被 write! 写穿，也不能清掉 buffer 的 readonly
+-- 场景 4：只读文件不能被写穿，也不能清掉 buffer 的 readonly（save_target 的 readonly/fs_access 检查与普通 :write 的 E505 共同拦住）
 notices = {}
 f = new_fixture('readonly')
 assert(vim.uv.fs_chmod(f.other, tonumber('444', 8)))
@@ -172,8 +173,8 @@ assert(vim.api.nvim_buf_is_valid(listed) and vim.fn.buflisted(listed) == 1,
   'rollback must not wipe a buffer the user already had listed either')
 assert(not vim.api.nvim_buf_is_loaded(listed), 'rollback must not leave the listed buffer loaded with rolled-back edits')
 
--- 场景 6：被移动的只读文件自身也是编辑目标。它的 buffer 已改名，会走 write!，
--- 只读检查是这里唯一的防线（没被移动的文件由普通 :write 自己拒绝，测不到这一层）
+-- 场景 6：被移动的只读文件自身也是编辑目标。LSP 编辑使它的 buffer 处于已修改状态，sync_buffers 不重读它，
+-- 保存走 `write!`，会跳过 Neovim 自己的只读检查；readonly 与 fs_access 因此是这里的唯一防线
 notices = {}
 f = new_fixture('readonly-moved')
 assert(vim.uv.fs_chmod(f.src .. '/a.ts', tonumber('444', 8)))
@@ -212,6 +213,52 @@ for _, variant in ipairs({
     variant.name .. ': rollback must restore the buffer content')
   assert(not vim.bo[clean].modified, variant.name .. ': rollback must not leave a clean buffer modified')
 end
+
+-- 场景 8：已改名的 buffer 用 write!，它会跳过 Neovim 自己的「文件已被改动」检查，
+-- 所以「磁盘内容仍是编辑前的」这道比对是唯一防线：落盘之后、保存之前被外部改动，不能被覆盖
+notices = {}
+f = new_fixture('external-after-move')
+run(f, false, function() write_raw(f.dst .. '/a.ts', 'import "./old"\n// external change\n') end)
+assert(raw(f.dst .. '/a.ts') == 'import "./old"\n// external change\n',
+  'a change made by another process after the move must not be overwritten by write!')
+assert(table.concat(notices, '\n'):find('not saved', 1, true), 'the user must be told the edit was not saved')
+
+-- 场景 9：buffer 加载之后文件才被 chmod 成只读。此时 buffer 的 readonly 选项仍是 false，
+-- 只有 fs_access 能拦住，否则 write! 会把只读文件写穿
+notices = {}
+f = new_fixture('chmod-after-load')
+local preloaded = vim.fn.bufadd(f.src .. '/a.ts')
+vim.fn.bufload(preloaded)
+assert(not vim.bo[preloaded].readonly)
+run(f, false, function() assert(vim.uv.fs_chmod(f.dst .. '/a.ts', tonumber('444', 8))) end)
+assert(disk(f.dst .. '/a.ts') == 'import "./old"', 'a file made read-only after the buffer was loaded must not be written through')
+assert(table.concat(notices, '\n'):find('not saved', 1, true), 'the user must be told the edit was not saved')
+vim.uv.fs_chmod(f.dst .. '/a.ts', tonumber('644', 8))
+
+-- 场景 10：没被移动、已加载且干净的 buffer，对应文件只被 touch 过（内容不变）。
+-- 普通 :write 此时会弹阻塞式 y/n（headless 下脚本直接退出）；write! + 磁盘内容比对应当直接保存
+f = new_fixture('touched')
+local touched = vim.fn.bufadd(f.other)
+vim.fn.bufload(touched)
+vim.uv.fs_utime(f.other, os.time() + 100, os.time() + 100)
+run(f)
+assert(disk(f.other) == 'import "./new"', 'a merely touched file must be saved without any interactive prompt')
+
+-- 场景 11：用户要被告知哪些文件被 LSP 改写并自动保存了；回滚时没有改动落盘，不能说“已更新”
+notices = {}
+f = new_fixture('notify-updated')
+run(f)
+local updated = table.concat(notices, '\n')
+assert(updated:find('updated references in', 1, true), 'a successful move that rewrote files must notify the user')
+assert(updated:find('other.ts', 1, true) and updated:find('a.ts', 1, true), 'the notice must name the rewritten files: ' .. updated)
+assert(not updated:find('dirty.ts', 1, true) or updated:find('updated references in 2', 1, true),
+  'the dirty buffer was not saved and must not be listed as updated')
+
+notices = {}
+f = new_fixture('notify-rollback')
+run(f, true)
+assert(not table.concat(notices, '\n'):find('updated references in', 1, true),
+  'a rolled-back batch wrote nothing, so it must not claim files were updated')
 
 vim.notify = original_notify
 vim.fn.delete(temporary, 'rf')

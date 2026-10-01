@@ -215,7 +215,7 @@ function M.attach(Actions, H, context)
     local stops = {}
     local finished = false
 
-    -- 幂等：LSP 回调与 on_done 都会调用；before_moves 中途抛错时 LSP 回调不会触发，只能靠 on_done 兜底
+    -- 幂等：LSP 回调与 execute_async 的完成回调都会调用；before_moves 中途抛错时 LSP 回调不会触发，只能靠完成回调兜底
     local function clear_loading()
       for _, stop in ipairs(stops) do stop() end
       stops = {}
@@ -269,23 +269,7 @@ function M.attach(Actions, H, context)
         local edits = pending
         pending = nil
 
-        local moved_renames, all_moved = {}, true
-        for _, outcome in ipairs(outcomes) do
-          if outcome.moved then
-            moved_renames[#moved_renames + 1] = { old_path = outcome.source, new_path = outcome.destination }
-          else
-            all_moved = false
-          end
-        end
-
-        -- 编辑是按「整批都会移动」计算的：只要有一项失败，其余 import 就可能指向不存在的路径，
-        -- 无法只保留部分编辑，因此整体回滚，宁可让已移动文件的 import 保持旧值
-        if edits then edits.settle(all_moved) end
-        if edits and not all_moved and #moved_renames > 0 then
-          vim.notify('vv-explorer: some moves failed; LSP import edits were rolled back, '
-            .. 'imports of the moved files were not updated', vim.log.levels.WARN)
-        end
-        Lsp.did_rename_many(moved_renames)
+        Lsp.settle_batch(edits, outcomes)
       end,
     }, function(result)
       finished = true
