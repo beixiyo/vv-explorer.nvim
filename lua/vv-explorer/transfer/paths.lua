@@ -50,6 +50,17 @@ local function checktime_under(destination)
   end
 end
 
+-- 移动目标路径上残留的过期 buffer（未修改、磁盘文件已不存在，例如 Git 丢弃改动删掉了文件但 buffer 还在）
+-- 必须在发 willRenameFiles 与落盘之前关掉：它仍挂着 LSP client，服务端会把这个路径当成客户端已打开的文档；
+-- 它还占着这个 buffer 名，之后 sync_buffers 把源 buffer 改名到这里会失败，源 buffer 停在已不存在的旧路径。
+-- 已修改的 buffer 不动，由 install_move 的 modified_buffer_under 拒绝移动。buffer 名可能是逻辑路径，
+-- 也可能是解析过父级软链接的路径，两种都处理
+local function close_stale_buffers(path)
+  Fs.close_stale_buffers(normalize(path))
+  local ok, resolved = pcall(operation_path, path)
+  if ok and resolved ~= normalize(path) then Fs.close_stale_buffers(resolved) end
+end
+
 local function check_operation_path(logical_destination, destination)
   local ok, current = pcall(operation_path, logical_destination)
   if not ok then return false, tostring(current) end
@@ -87,6 +98,7 @@ return {
   operation_path = operation_path,
   modified_buffer_under = modified_buffer_under,
   checktime_under = checktime_under,
+  close_stale_buffers = close_stale_buffers,
   check_operation_path = check_operation_path,
   unique_unreserved = unique_unreserved,
   identity = function(path) return normalize(Fs.realpath(path)) end,

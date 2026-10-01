@@ -4,6 +4,7 @@ local Tree = require('vv-explorer.tree')
 local Render = require('vv-explorer.render')
 local Preview = require('vv-explorer.preview')
 local Fs = require('vv-utils.fs')
+local Paths = require('vv-explorer.transfer.paths')
 local Trash = require('vv-explorer.trash')
 local Lsp = require('vv-explorer.lsp')
 local Loading = require('vv-utils.loading')
@@ -254,6 +255,8 @@ function M.attach(Actions, H, context)
       if not new_name or new_name == '' or new_name == node.name then return end
 
       local new_path = vim.fs.normalize(vim.fs.dirname(old_path) .. '/' .. new_name)
+      -- 目标上的过期 buffer 会污染 LSP 并让 sync_buffers 改名失败，发请求与改名前先关掉（见 Paths.close_stale_buffers）
+      Paths.close_stale_buffers(new_path)
       local timeout_ms = state.opts and state.opts.lsp_rename_timeout_ms or 5000
 
       ---@param pending? VVExplorerLspPendingEdits willRenameFiles 已应用但未保存的编辑

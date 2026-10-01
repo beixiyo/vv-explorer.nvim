@@ -24,6 +24,7 @@ local function text_edit(path, line)
 end
 
 local fixture -- 每个场景一套全新目录
+local request_probe -- 发出 willRenameFiles 时调用，用来观察请求那一刻的 buffer 状态
 local function edit_changes()
   return vim.tbl_extend('error',
     text_edit(fixture.src .. '/a.ts', 0),     -- 被移动文件自身
@@ -34,6 +35,7 @@ end
 package.loaded['vv-utils.lsp.file_operations'] = {
   clients = function() return { { name = 'fixture-lsp' } } end,
   will_rename_many_async = function(_, _, on_done)
+    if request_probe then request_probe() end
     on_done({ { edit = { changes = edit_changes() }, encoding = 'utf-16' } }, false)
   end,
   notify_did_rename_many = function() end,
@@ -259,6 +261,35 @@ f = new_fixture('notify-rollback')
 run(f, true)
 assert(not table.concat(notices, '\n'):find('updated references in', 1, true),
   'a rolled-back batch wrote nothing, so it must not claim files were updated')
+
+-- 场景 12：目标路径上残留过期 buffer（未修改、文件已被删，如 Git 丢弃改动后）。它必须在 willRenameFiles 之前被关掉：
+-- 否则服务端把它当成已打开的文档；它还占着 buffer 名，sync_buffers 把源 buffer 改名过去会失败、源 buffer 停在旧路径
+f = new_fixture('stale-destination')
+vim.fn.writefile({ 'ghost' }, f.dst .. '/a.ts')
+local stale = vim.fn.bufadd(f.dst .. '/a.ts')
+vim.fn.bufload(stale)
+assert(os.remove(f.dst .. '/a.ts'))
+local moved_buf = vim.fn.bufadd(f.src .. '/a.ts')
+vim.fn.bufload(moved_buf)
+local stale_alive_at_request
+request_probe = function() stale_alive_at_request = vim.api.nvim_buf_is_valid(stale) end
+result = run(f)
+request_probe = nil
+assert(stale_alive_at_request == false, 'the stale destination buffer must be closed before willRenameFiles is sent')
+assert(result.completed == 2, 'the move into a path with only a stale buffer must succeed')
+assert(vim.api.nvim_buf_get_name(moved_buf) == f.dst .. '/a.ts',
+  'the moved file buffer must be renamed to the destination, got ' .. vim.api.nvim_buf_get_name(moved_buf))
+assert(disk(f.dst .. '/a.ts') == 'import "./new"', 'edits to the moved file must still be saved at its new path')
+
+-- 场景 13：目标路径上是已修改的 buffer（文件不存在但有未保存内容）：绝不能关掉，移动被拒绝，内容原样
+f = new_fixture('dirty-destination')
+local dirty_dest = vim.fn.bufadd(f.dst .. '/a.ts')
+vim.fn.bufload(dirty_dest)
+vim.api.nvim_buf_set_lines(dirty_dest, 0, -1, false, { 'unsaved work' })
+result = run(f)
+assert(vim.api.nvim_buf_is_valid(dirty_dest) and vim.bo[dirty_dest].modified, 'a modified destination buffer must never be closed')
+assert(vim.api.nvim_buf_get_lines(dirty_dest, 0, -1, false)[1] == 'unsaved work', 'its unsaved content must be kept')
+assert(exists(f.src .. '/a.ts'), 'the move onto a modified buffer must be refused, leaving the source in place')
 
 vim.notify = original_notify
 vim.fn.delete(temporary, 'rf')

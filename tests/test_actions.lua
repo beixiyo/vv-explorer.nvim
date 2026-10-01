@@ -11,6 +11,7 @@ local calls = {
   focus = {},
   rename = {},
   sync = {},
+  order = {},
   refresh = 0,
   render = 0,
 }
@@ -106,11 +107,17 @@ package.loaded['vv-utils.fs'] = {
     return RealFs.copy(source, dest)
   end,
   rename = function(source, dest)
+    calls.order[#calls.order + 1] = 'rename'
     calls.rename[#calls.rename + 1] = { source = source, dest = dest }
     return RealFs.rename(source, dest)
   end,
   sync_buffers = function(source, dest)
     calls.sync[#calls.sync + 1] = { source = source, dest = dest }
+  end,
+  close_stale_buffers = function(path)
+    local closed = RealFs.close_stale_buffers(path)
+    if #closed > 0 then calls.order[#calls.order + 1] = 'close_stale' end
+    return closed
   end,
   mkdir_p = RealFs.mkdir_p,
   create_file = RealFs.create_file,
@@ -216,6 +223,23 @@ vim.fn.writefile({ 'existing drop' }, temporary .. '/project/drop.txt')
 Actions.drop_into(state, { state.root.path, temporary .. '/drop.txt' }, state.root.path)
 assert_equal(#calls.copy, 2, '拖放跳过目标目录自身并继续复制其他文件')
 assert_equal(calls.rename[#calls.rename].dest, temporary .. '/project/drop (copy).txt', '拖放同样发布到唯一目标路径')
+
+-- r 重命名：目标路径上残留的过期 buffer（未修改、文件已删除）必须在改名前关掉，否则它占着 buffer 名，
+-- 源 buffer 无法改名过去；也会被 LSP 当成已打开的文档
+vim.fn.writefile({ 'ren' }, temporary .. '/project/ren.txt')
+vim.fn.writefile({ 'ghost' }, temporary .. '/project/ren2.txt')
+local stale = vim.fn.bufadd(temporary .. '/project/ren2.txt')
+vim.fn.bufload(stale)
+assert(os.remove(temporary .. '/project/ren2.txt'))
+state.cursor_node = { path = temporary .. '/project/ren.txt', name = 'ren.txt', is_dir = false, parent = state.root }
+local original_input = vim.ui.input
+vim.ui.input = function(_, on_confirm) on_confirm('ren2.txt') end
+calls.order = {}
+Actions.rename(state)
+vim.ui.input = original_input
+assert(not vim.api.nvim_buf_is_valid(stale), 'r 重命名前应关掉目标路径上的过期 buffer')
+assert_equal(table.concat(calls.order, ','), 'close_stale,rename', '过期 buffer 必须在磁盘改名之前关掉')
+assert_equal(calls.rename[#calls.rename].dest, temporary .. '/project/ren2.txt', 'r 重命名应发布到目标路径')
 
 vim.fn.delete(temporary, 'rf')
 

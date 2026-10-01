@@ -185,6 +185,9 @@ local function prepare_entry(plan, policy, entry, reserved, result)
     return nil
   end
 
+  -- cut 会把源 buffer 改名到目标，并通知 LSP；目标上的过期 buffer 要在预留（会创建占位文件）之前关掉
+  if plan.mode == 'cut' then Paths.close_stale_buffers(logical_destination) end
+
   local source_root = entry.source_snapshot.entries and entry.source_snapshot.entries['']
   local reservation
   if policy == 'increment' then
@@ -199,6 +202,7 @@ local function prepare_entry(plan, policy, entry, reserved, result)
         return nil
       end
       reserved[candidate] = true
+      if plan.mode == 'cut' then Paths.close_stale_buffers(candidate) end
       local reserve_ok, candidate_reservation = pcall(
         Reservation.reserve, candidate, source_root and source_root.type == 'directory'
       )
