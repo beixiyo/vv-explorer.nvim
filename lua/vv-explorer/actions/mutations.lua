@@ -10,6 +10,7 @@ local Lsp = require('vv-explorer.lsp')
 local Loading = require('vv-utils.loading')
 local Text = require('vv-explorer.text')
 local DialogLifecycle = require('vv-explorer.dialog_lifecycle')
+local PermanentDelete = require('vv-explorer.permanent_delete')
 
 local M = {}
 
@@ -179,6 +180,17 @@ function M.attach(Actions, H, context)
       end
       snapshots[#snapshots + 1] = snapshot
     end
+    local delete_paths = vim.tbl_map(function(snapshot) return snapshot.path end, snapshots)
+
+    -- 同一路径（或其祖先 / 后代）仍在异步删除中，再次删除只会与在途任务互相踩踏
+    local function reject_busy()
+      local busy = PermanentDelete.overlapping(state, delete_paths)
+      if busy then
+        vim.notify('vv-explorer: delete already in progress: ' .. vim.fn.fnamemodify(busy, ':.'), vim.log.levels.WARN)
+      end
+      return busy ~= nil
+    end
+    if reject_busy() then return end
 
     local function perform_delete()
       for _, snapshot in ipairs(snapshots) do
@@ -187,45 +199,51 @@ function M.attach(Actions, H, context)
           return
         end
       end
+      if reject_busy() then return end
 
       local resolved = {}
       for _, snapshot in ipairs(snapshots) do
         resolved[snapshot.path] = Fs.realpath(snapshot.path):gsub('/+$', '')
       end
 
-      local deleted
-      local failed
-      if use_trash then
-        local delete_paths = vim.tbl_map(function(snapshot) return snapshot.path end, snapshots)
-        local result = Trash.trash(delete_paths)
-        deleted = result.trashed
-        failed = result.failed
-      else
-        deleted = {}
-        failed = {}
-        for _, snapshot in ipairs(snapshots) do
-          local ok, err = pcall(Fs.delete, snapshot.path)
-          if ok then
-            deleted[#deleted + 1] = snapshot.path
-          else
-            failed[#failed + 1] = tostring(err)
-          end
+      ---@param deleted string[]
+      ---@param failed string[]
+      local function settle(deleted, failed)
+        if #failed > 0 then
+          vim.notify('vv-explorer: ' .. verb:lower() .. ' errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
+        else
+          local past = use_trash and 'Trashed' or 'Deleted'
+          vim.notify(('%s %s'):format(past, Text.items(#deleted)))
         end
+
+        if #deleted > 0 then
+          local keys = {}
+          for _, path in ipairs(deleted) do keys[#keys + 1] = resolved[path] end
+          cleanup_deleted_bufs(state, keys)
+        end
+        context.after_fs_change(state)
       end
 
-      if #failed > 0 then
-        vim.notify('vv-explorer: ' .. verb:lower() .. ' errors:\n' .. table.concat(failed, '\n'), vim.log.levels.ERROR)
-      else
-        local past = use_trash and 'Trashed' or 'Deleted'
-        vim.notify(('%s %s'):format(past, Text.items(#deleted)))
+      if use_trash then
+        local result = Trash.trash(delete_paths)
+        settle(result.trashed, result.failed)
+        return
       end
 
-      if #deleted > 0 then
-        local keys = {}
-        for _, path in ipairs(deleted) do keys[#keys + 1] = resolved[path] end
-        cleanup_deleted_bufs(state, keys)
-      end
-      context.after_fs_change(state)
+      -- 永久删除分片异步执行，不冻结 UI；首个失败即停止，帧持续到 settle 的刷新把项移除
+      PermanentDelete.start(state, {
+        paths = delete_paths,
+        on_done = function(result)
+          settle(result.deleted, result.err and { result.err } or {})
+        end,
+        on_cancel = function(result)
+          vim.notify(
+            ('vv-explorer: delete interrupted: explorer closed after deleting %s, the rest may be partially deleted')
+              :format(Text.items(#result.deleted)),
+            vim.log.levels.WARN
+          )
+        end,
+      })
     end
 
     local value = #paths == 1 and vim.fn.fnamemodify(paths[1], ':.') or Text.items(#paths)
@@ -244,6 +262,9 @@ function M.attach(Actions, H, context)
 
   function Actions.delete(state) request_delete(state, false) end
   function Actions.force_delete(state) request_delete(state, true) end
+
+  --- 取消在途的永久删除并停帧（面板关闭 / buffer wipe），幂等
+  function Actions.cancel_delete(state) PermanentDelete.cancel_all(state) end
 
   function Actions.rename(state)
     H.ensure_state_fields(state)
@@ -284,13 +305,15 @@ function M.attach(Actions, H, context)
 
       state._lsp_renaming = { [old_path] = true }
       Render.render(state)
-      local stop_loading = Loading.start({
+      local loading = Loading.mark({
         buf = state.buf,
-        get_row = function() return state.path_to_row and state.path_to_row[old_path] end,
+        get_pos = function() return Render.icon_slot_pos(state, old_path) end,
+        pos = 'overlay',
+        width = Render.ICON_SLOT_COLS,
       })
 
       Lsp.will_rename_async(old_path, new_path, timeout_ms, function(timed_out, pending)
-        stop_loading()
+        loading:stop()
         state._lsp_renaming = nil
         if timed_out then
           vim.notify(

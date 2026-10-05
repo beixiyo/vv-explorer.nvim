@@ -48,6 +48,8 @@ local ARROW_CLOSE = ui_icons.fold_closed.glyph
 local ARROW_SLOT_COLS = 2  -- 箭头槽位固定 2 列
 local ICON_SLOT_COLS  = 2  -- 图标槽位固定 2 列
 
+M.ICON_SLOT_COLS = ICON_SLOT_COLS
+
 local function pad_to_cols(s, cols)
   local w = vim.fn.strdisplaywidth(s)
   if w >= cols then return s, w end
@@ -55,7 +57,7 @@ local function pad_to_cols(s, cols)
 end
 
 ---@param opts {depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, path:string, match_positions?:integer[], basename_byte_offset?:integer, dim?:boolean, clipboard?:'cut'|'copy', git_symbol?:{glyph:string,hl:string}, diag_symbol?:{glyph:string,hl:string}}
----@return string line, table[] extmarks, integer name_col  extmarks 不含 lnum，调用方负责 row 赋值；name_col 为 name 起始字节偏移
+---@return string line, table[] extmarks, integer name_col, integer icon_col  extmarks 不含 lnum，调用方负责 row 赋值；name_col / icon_col 为 name / 图标槽起始字节偏移
 local function build_row_visual(opts)
   local prefix = string.rep(INDENT_STEP, opts.depth)
 
@@ -95,6 +97,7 @@ local function build_row_visual(opts)
     }
   end
   col = col + #arrow_block
+  local icon_col = col
 
   if #icon > 0 then
     extmarks[#extmarks + 1] = {
@@ -147,7 +150,7 @@ local function build_row_visual(opts)
     end
   end
 
-  return line, extmarks, col
+  return line, extmarks, col, icon_col
 end
 
 ---@param buf integer
@@ -161,6 +164,17 @@ local function flush(buf, lines, extmarks)
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, em.row, em.col, em.opts)
   end
   vim.bo[buf].modifiable = false
+end
+
+--- 路径所在行的图标槽：1-based 行与槽起始字节列，供 loading 以 overlay 盖住图标而不挤动名字
+--- 路径不可见或所在行没有图标槽（根行）时返回 nil
+---@param state table
+---@param path string
+---@return VVLoadingPos?
+function M.icon_slot_pos(state, path)
+  local row = state.path_to_row and state.path_to_row[path]
+  local col = row and state.icon_cols and state.icon_cols[row]
+  if col then return { row = row, col = col } end
 end
 
 ---@param state table
@@ -186,6 +200,7 @@ function M.render(state)
   local extmarks = {}
   local path_to_row = {}
   local name_cols = {}
+  local icon_cols = {}
 
   -- 根行
   local root_label = vim.fn.fnamemodify(state.root.path, ':~')
@@ -207,7 +222,7 @@ function M.render(state)
     local is_renaming = renaming and renaming[node.path]
     local git_sym = (not is_renaming) and git and git.status_map and Git.symbol_for(git.status_map[node.path])
     local diag_sym = (not is_renaming) and diag and Diagnostics.symbol_for(diag[node.path])
-    local line, ems, name_col = build_row_visual({
+    local line, ems, name_col, icon_col = build_row_visual({
       depth = row.depth,
       is_dir = node.is_dir,
       is_open = node.open,
@@ -222,6 +237,7 @@ function M.render(state)
     lines[#lines + 1] = line
     local lnum = #lines - 1
     name_cols[#lines] = name_col
+    icon_cols[#lines] = icon_col
     for _, em in ipairs(ems) do
       extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
     end
@@ -238,6 +254,7 @@ function M.render(state)
 
   state.path_to_row = path_to_row
   state.name_cols = name_cols
+  state.icon_cols = icon_cols
 
   -- 选区：整行高亮（不占 signcolumn）
   if state.selection then
@@ -388,6 +405,7 @@ function M.render_filter(state)
   local extmarks = {}
   local path_to_row = {}
   local name_cols = {}
+  local icon_cols = {}
   local pseudo_rows = {}
 
   state.filter.match_count = f.matched.total_count
@@ -415,7 +433,7 @@ function M.render_filter(state)
     local is_renaming = state._lsp_renaming and state._lsp_renaming[path]
     local git_sym = (not is_renaming) and git and git.status_map and Git.symbol_for(git.status_map[path])
     local diag_sym = (not is_renaming) and diag and Diagnostics.symbol_for(diag[path])
-    local line, ems, name_col = build_row_visual({
+    local line, ems, name_col, icon_col = build_row_visual({
       depth = depth,
       is_dir = is_dir,
       is_open = is_dir,
@@ -432,6 +450,7 @@ function M.render_filter(state)
     lines[#lines + 1] = line
     local lnum = #lines - 1
     name_cols[#lines] = name_col
+    icon_cols[#lines] = icon_col
     for _, em in ipairs(ems) do
       extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
     end
@@ -452,6 +471,7 @@ function M.render_filter(state)
   state.rows = pseudo_rows
   state.path_to_row = path_to_row
   state.name_cols = name_cols
+  state.icon_cols = icon_cols
 
   if state.selection then
     for p in pairs(state.selection) do

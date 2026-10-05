@@ -71,13 +71,14 @@ All options and their defaults:
 opts = {
   position = 'left',           -- 'left' | 'right'
   width = 32,                  -- Initial width; manual resize is persisted by vv-utils.state
-  persist_open = true,         -- Restore the previous open/closed state on the next Neovim session
+  persist_open = false,        -- Set true to restore the previous open/closed state on the next Neovim session
   state = nil,                 -- Optional VVStateHandle (default: vv-explorer/panel)
   hidden = false,              -- Show dotfiles (toggle with '.')
   group_empty_dirs = true,     -- Merge single-child directory chains
   preview = true,              -- Automatically preview without opening
   watch = true,                -- Auto-refresh with libuv fs_event
   select_move_down = true,     -- Move down one row after Tab selection
+  yank_notify = false,         -- Notify after `Y` / right-click copies paths; clipboard errors are always reported
   cwd = nil,                   -- Root directory (nil = vim.fn.getcwd())
   sync_cwd_on_cd = 'tab',      -- Sync cwd when changing root with ']' / '[': 'tab' (tcd) | 'global' (cd) | false
   icon_rules = {},             -- Custom icon rules
@@ -164,6 +165,8 @@ Requires the external [`fd`](https://github.com/sharkdp/fd) command. Switch amon
 ### Trash
 
 Deleted files are moved to `~/.local/share/vv-explorer/trash/` with metadata (original path, time, and size) for restoration. Press `T` or run `:VVExplorerTrash` to open the trash panel
+
+Directory sizes are computed asynchronously after the move and written back into the metadata, so trashing never waits for the scan. Until the scan finishes the panel shows `—` in the size column and updates it in place once the size arrives; entries whose scan was interrupted (Neovim exited mid-scan) are rescanned the next time the panel opens
 
 | Option | Default | Description |
 |---|---|---|
@@ -402,6 +405,26 @@ The mode is selected **automatically by environment**:
 | `:VVExplorerFocus` | Focus the tree window |
 | `:VVExplorerTrash` | Open the trash panel |
 
+## Highlights
+
+All highlight groups are registered with `default = true` and re-applied after `ColorScheme`; override any of them with `vim.api.nvim_set_hl(0, '<group>', {...})` in your colorscheme or config. The following groups carry no hard-coded colors and link to standard groups by default, so they follow the active colorscheme:
+
+| Group | Purpose | Default link |
+|-------|---------|--------------|
+| `VVExplorerMatch` | Fuzzy-matched characters while filtering | `Search` |
+| `VVExplorerChainSelected` | Level selected with `<C-l>` / `<C-h>` in a grouped empty-directory chain | `CurSearch` |
+| `VVExplorerDropTarget` | Background of the drop-target directory row while dragging | `PmenuSel` |
+
 ## License
 
 MIT
+
+## Development tests
+
+```sh
+./tests/run.sh [literal-filter]
+```
+
+Requires Unix-like OS, Neovim 0.12+, Git, POSIX shell and existing `vv-utils.nvim` source. `VV_UTILS` and `NVIM_BIN` can override discovery and the executable. The full suite also needs `rg`, `fd`, and existing `vv-icons.nvim` / `vv-bufferline.nvim` sources (`VV_ICONS` / `VV_BUFFERLINE` overrides). Bufferline is an integration fixture, not a required production dependency.
+
+The shared runner uses isolated children without personal configuration. Dependency discovery, CI checkouts and isolation are documented in the [shared test guide](https://github.com/beixiyo/vv-utils.nvim/blob/main/dev/test/README.md). Headless tests do not replace TUI verification; CI needs an outer job timeout.

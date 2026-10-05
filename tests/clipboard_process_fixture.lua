@@ -1,10 +1,9 @@
 -- 共享剪贴板跨 Neovim 进程读写夹具
 
-local source = debug.getinfo(1, 'S').source:sub(2)
-local root = vim.fn.fnamemodify(source, ':p:h:h')
-local utils = vim.fn.fnamemodify(root, ':h') .. '/vv-utils.nvim'
-vim.opt.runtimepath:prepend(utils)
-vim.opt.runtimepath:prepend(root)
+vim.opt.packpath = ''
+dofile(vim.env.VV_UTILS .. '/dev/test/runtime.lua').apply()
+vim.opt.runtimepath:prepend(vim.env.VV_TEST_REPO)
+vim.opt.runtimepath:prepend(vim.env.VV_UTILS)
 
 local Store = require('vv-explorer.clipboard_store')
 local mode = assert(vim.env.VV_EXPLORER_CLIPBOARD_TEST_MODE)
@@ -18,8 +17,9 @@ if mode == 'write-hold' then
   assert(record and not error_message, error_message)
   assert(ready_path and release_path)
   assert(vim.fn.writefile({ 'ready' }, ready_path) == 0)
-  assert(vim.wait(10000, function() return vim.fn.filereadable(release_path) == 1 end, 5),
-    'clipboard writer timed out waiting for release')
+  assert(vim.wait(10000, function()
+    return vim.fn.filereadable(release_path) == 1
+  end, 5), '剪贴板写入进程等待释放超时')
 elseif mode == 'read' then
   local record, error_message = Store.read()
   assert(record and not error_message, error_message)
@@ -29,8 +29,9 @@ elseif mode == 'write-cut-hold' then
   assert(record and not error_message, error_message)
   assert(ready_path and release_path)
   assert(vim.fn.writefile({ 'ready' }, ready_path) == 0)
-  assert(vim.wait(10000, function() return vim.fn.filereadable(release_path) == 1 end, 5),
-    'cut clipboard writer timed out waiting for release')
+  assert(vim.wait(10000, function()
+    return vim.fn.filereadable(release_path) == 1
+  end, 5), '剪切剪贴板写入进程等待释放超时')
 elseif mode == 'partial-cut-hold' then
   local record, error_message = Store.read()
   assert(record and not error_message, error_message)
@@ -43,8 +44,9 @@ elseif mode == 'partial-cut-hold' then
   assert(current and #current.paths == 1 and current.paths[1] == record.paths[2])
   assert(ready_path and release_path)
   assert(vim.fn.writefile({ 'ready' }, ready_path) == 0)
-  assert(vim.wait(10000, function() return vim.fn.filereadable(release_path) == 1 end, 5),
-    'partial cut consumer timed out waiting for release')
+  assert(vim.wait(10000, function()
+    return vim.fn.filereadable(release_path) == 1
+  end, 5), '部分剪切消费者等待释放超时')
 elseif mode == 'read-cut-remaining' then
   local record, error_message = Store.read()
   assert(record and not error_message, error_message)
@@ -55,11 +57,14 @@ elseif mode == 'write-watch' then
   assert(ready_path and result_path)
   local unsubscribe = Store.subscribe(function(current, subscribe_error)
     assert(not subscribe_error, subscribe_error)
-    if not current then assert(vim.fn.writefile({ 'cleared' }, result_path) == 0) end
+    if not current then
+      assert(vim.fn.writefile({ 'cleared' }, result_path) == 0)
+    end
   end)
   assert(vim.fn.writefile({ 'ready' }, ready_path) == 0)
-  assert(vim.wait(10000, function() return vim.fn.filereadable(result_path) == 1 end, 5),
-    'clipboard owner timed out waiting for remote clear')
+  assert(vim.wait(10000, function()
+    return vim.fn.filereadable(result_path) == 1
+  end, 5), '剪贴板所有者等待其他进程清空超时')
   unsubscribe()
 elseif mode == 'clear' then
   local record, error_message = Store.read()
@@ -88,7 +93,7 @@ elseif mode == 'owner-release-race' then
   local released, release_error = Store.release_owned()
   Store.read = read
   assert(released and not release_error, release_error)
-  assert(Store.read() == nil, 'owner exit must clear consumer progress with the same owner')
+  assert(Store.read() == nil, '所有者退出必须清空同所有者的消费者进度')
 
   -- 同一竞争窗口如果出现新 owner，退出必须保留其记录
   assert(Store.write('copy', { path .. '-old-owner' }))
@@ -103,18 +108,18 @@ elseif mode == 'owner-release-race' then
     return record, error_message
   end
   assert(Store.release_owned())
-  assert(Store.read().id == newer.id, 'owner exit must preserve another owner after a CAS race')
+  assert(Store.read().id == newer.id, 'CAS 竞争后所有者退出必须保留其他所有者记录')
   assert(Store.clear(newer))
 elseif mode == 'cas-protect' then
   local old = assert(Store.write('cut', { path .. '-old' }))
   local current = assert(Store.write('copy', { path .. '-new' }))
   local cleared, observed, clear_error = Store.clear(old)
   assert(not cleared and not clear_error, clear_error)
-  assert(observed and observed.id == current.id, 'stale clear must observe the newer clipboard')
+  assert(observed and observed.id == current.id, '过期清空必须观察到新剪贴板')
 
   local replaced, replacement, replace_error = Store.replace_if_current(old, 'cut', {})
   assert(not replaced and not replace_error, replace_error)
-  assert(replacement and replacement.id == current.id, 'stale cut completion must preserve the newer clipboard')
+  assert(replacement and replacement.id == current.id, '过期剪切完成必须保留新剪贴板')
 else
   error('unknown clipboard fixture mode: ' .. mode)
 end

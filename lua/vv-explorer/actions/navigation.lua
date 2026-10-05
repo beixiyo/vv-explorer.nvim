@@ -132,14 +132,15 @@ function L.attach(M, H)
 
   function M.yank_abs_path(state)
     H.ensure_state_fields(state)
+    local notify = state.opts.yank_notify == true
     local paths = H.selected_paths(state)
     if #paths > 0 then
-      Editor.copy(table.concat(paths, '\n'), { title = 'vv-explorer' })
+      Editor.copy(table.concat(paths, '\n'), { title = 'vv-explorer', silent = not notify })
       return
     end
     local node = H.node_under_cursor(state)
     if not node then return end
-    Editor.copy_path({ path = node.path, title = 'vv-explorer' })
+    Editor.copy_path({ path = node.path, title = 'vv-explorer', notify = notify })
   end
 
   local function open_in(state, cmd)

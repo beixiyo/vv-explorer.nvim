@@ -72,7 +72,7 @@ function M.attach(Actions, H)
 
     pcall(vim.api.nvim_buf_set_extmark, state.buf, CHAIN_NS, line - 1, name_col, {
       end_col = name_col + offset,
-      hl_group = 'VVExplorerMatch',
+      hl_group = 'VVExplorerChainSelected',
       priority = 200,
     })
   end

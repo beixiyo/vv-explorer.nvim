@@ -12,7 +12,7 @@ local Tree = require('vv-explorer.tree')
 
 local M = {}
 
----等待 LSP 时最多同时显示 loading 的行数，避免批量剪切时创建过多 timer
+---等待 LSP 时最多显示 loading 的行数：每帧按此上限重画 extmark，批量剪切不随条目数放大
 local MAX_LOADING_ROWS = 30
 
 local function notify_store_error(error_message)
@@ -212,18 +212,19 @@ function M.attach(Actions, H, context)
     local timeout_ms = state.opts and state.opts.lsp_rename_timeout_ms or 5000
     ---@type VVExplorerLspPendingEdits?
     local pending
-    local stops = {}
+    ---@type vv-utils.loading.Handle?
+    local loading
     local finished = false
 
     -- 幂等：LSP 回调与 execute_async 的完成回调都会调用；before_moves 中途抛错时 LSP 回调不会触发，只能靠完成回调兜底
     local function clear_loading()
-      for _, stop in ipairs(stops) do stop() end
-      stops = {}
+      if loading then loading:stop() end
+      loading = nil
       state._lsp_renaming = nil
     end
 
     Transfer.execute_async(plan, policy, {
-      -- 整批只发一次 willRenameFiles；loading 挂在每个可见的源文件行，
+      -- 整批只发一次 willRenameFiles；一个 loading 盖住每个可见源文件行的图标槽，
       -- 等待期间这些行不渲染 git/诊断图标
       before_moves = function(moves, proceed)
         pending = nil
@@ -235,17 +236,20 @@ function M.attach(Actions, H, context)
         state._lsp_renaming = renaming
         if vim.api.nvim_buf_is_valid(state.buf) then Render.render(state) end
 
-        local visible = 0
-        for _, move in ipairs(moves) do
-          if visible >= MAX_LOADING_ROWS then break end
-          if state.path_to_row and state.path_to_row[move.source] then
-            visible = visible + 1
-            stops[#stops + 1] = Loading.start({
-              buf = state.buf,
-              get_row = function() return state.path_to_row and state.path_to_row[move.source] end,
-            })
-          end
-        end
+        -- 每帧重新定位：等待期间树可能重画、折叠，可见行随之变化
+        loading = Loading.mark({
+          buf = state.buf,
+          get_pos = function()
+            local positions = {}
+            for _, move in ipairs(moves) do
+              if #positions >= MAX_LOADING_ROWS then break end
+              positions[#positions + 1] = Render.icon_slot_pos(state, move.source)
+            end
+            return positions
+          end,
+          pos = 'overlay',
+          width = Render.ICON_SLOT_COLS,
+        })
 
         Lsp.will_rename_many_async(renames, timeout_ms, function(timed_out, edits)
           -- 整批已经落盘收尾后才到达的编辑没人会 settle，直接回滚，避免留下隐藏的 modified buffer

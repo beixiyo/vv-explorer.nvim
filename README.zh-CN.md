@@ -70,13 +70,14 @@
 opts = {
   position = 'left',           -- 'left' | 'right'
   width = 32,                  -- 初始宽度；手动 resize 后由 vv-utils.state 持久化
-  persist_open = true,         -- 下次 Neovim 会话恢复上次的打开/关闭状态
+  persist_open = false,        -- 设 true 时在下次 Neovim 会话恢复上次的打开/关闭状态
   state = nil,                 -- 可选 VVStateHandle（默认 vv-explorer/panel）
   hidden = false,              -- 显示 dotfile（'.' 键切换）
   group_empty_dirs = true,     -- 单链目录合并
   preview = true,              -- 不打开自动预览
   watch = true,                -- libuv fs_event 自动刷新
   select_move_down = true,     -- Tab 多选后自动将光标下移一行
+  yank_notify = false,         -- `Y` / 右键复制路径成功后是否提示；剪贴板出错始终报错
   cwd = nil,                   -- 根目录（nil = vim.fn.getcwd()）
   sync_cwd_on_cd = 'tab',      -- ']' / '[' 切根时同步 cwd：'tab'（tcd）| 'global'（cd）| false
   icon_rules = {},             -- 自定义图标规则
@@ -163,6 +164,8 @@ opts = {
 ### 回收站
 
 删除的文件移入 `~/.local/share/vv-explorer/trash/`，附带元数据（原始路径、时间、大小）用于恢复。按 `T` 或 `:VVExplorerTrash` 打开回收站面板
+
+目录的大小在移入后异步统计再补写进元数据，移入本身不等待统计；统计完成前面板的大小列显示 `—`，算完后原地更新；统计中途退出 Neovim 的条目在下次打开面板时补跑
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
@@ -400,6 +403,26 @@ test         ← 再一次
 | `:VVExplorerFocus` | 聚焦到树窗口 |
 | `:VVExplorerTrash` | 打开回收站面板 |
 
+## 高亮组
+
+所有高亮组都以 `default = true` 注册，`ColorScheme` 后自动重新挂载；在主题或配置里直接 `vim.api.nvim_set_hl(0, '<组名>', {...})` 即可覆盖。以下组不写死颜色，默认链接到标准组，跟随当前主题：
+
+| 组 | 用途 | 默认链接 |
+|----|------|----------|
+| `VVExplorerMatch` | 过滤时模糊匹配命中的字符 | `Search` |
+| `VVExplorerChainSelected` | 折叠空目录链中 `<C-l>` / `<C-h>` 选中的层级 | `CurSearch` |
+| `VVExplorerDropTarget` | 拖拽经过时的落点目录行底色 | `PmenuSel` |
+
 ## License
 
 MIT
+
+## 开发测试
+
+```sh
+./tests/run.sh [literal-filter]
+```
+
+要求 Unix-like 系统、Neovim 0.12+、Git、POSIX shell 和已有的 `vv-utils.nvim` 源码；可用 `VV_UTILS`、`NVIM_BIN` 覆盖发现与可执行文件。完整套件还需要 `rg`、`fd` 及已有的 `vv-icons.nvim` / `vv-bufferline.nvim` 源码（可用 `VV_ICONS` / `VV_BUFFERLINE` 覆盖）。Bufferline 是集成 fixture，不是生产必需依赖。
+
+共享入口使用隔离 child，不加载个人配置。依赖发现、CI 检出与隔离契约见 [共享测试说明](https://github.com/beixiyo/vv-utils.nvim/blob/main/dev/test/README.zh-CN.md)。Headless 不替代真实 TUI 验证；CI 需设置外层 job timeout。

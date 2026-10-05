@@ -62,6 +62,7 @@ end
 local function on_buf_wiped()
   if not state then return end
   DialogLifecycle.cancel(state)
+  pcall(Actions.cancel_delete, state)
   pcall(Actions.unsubscribe_clipboard, state)
   pcall(Actions.invalidate_filter_index, state)
   pcall(Watch.detach, state)
@@ -77,6 +78,8 @@ local function close_window_only(opts)
   if not state then return end
   opts = opts or {}
   DialogLifecycle.cancel(state)
+  -- 真正关闭才取消在途永久删除；suspend 只是临时让位（如 vv-git 接管侧栏），删除继续、结果写回隐藏 buffer
+  if opts.persist_open ~= false then pcall(Actions.cancel_delete, state) end
   remember_width()
   pcall(Preview.discard_info_preview, state)
   if opts.persist_open ~= false and not is_exiting then
@@ -231,6 +234,8 @@ end
 
 ---@param resolved_config VVExplorerResolvedConfig
 function M.setup(resolved_config)
+  -- 重配使旧启动恢复与旧 suspend 回调失效，不能让旧意图作用于新配置
+  suspend_generation = suspend_generation + 1
   config = resolved_config
   panel_state = config.state or require('vv-utils.state').register('vv-explorer', 'panel')
   config.state = panel_state
@@ -251,7 +256,9 @@ function M.setup(resolved_config)
   end
 
   if config.persist_open and panel_state:get('open', false) == true then
+    local generation = suspend_generation
     vim.schedule(function()
+      if generation ~= suspend_generation or not config.persist_open then return end
       if not M.is_open() and panel_state and panel_state:get('open', false) == true then
         M.open({ focus = false })
       end
@@ -357,6 +364,12 @@ function M.open(opts)
 end
 
 function M.close()
+  if not state then
+    -- 启动恢复可能还在队列中；没有窗口也必须尊重显式关闭意图
+    suspend_generation = suspend_generation + 1
+    save_open_intent(false)
+    return
+  end
   close_window_only()
 end
 

@@ -56,17 +56,20 @@ local function entry_snapshot(entry)
   }
 end
 
-local function same_entry(first, second)
+local function same_entry(first, second, ignore_size)
   for _, field in ipairs(entry_fields) do
-    if first[field] ~= second[field] then return false end
+    if first[field] ~= second[field] and not (ignore_size and field == 'size_bytes') then return false end
   end
   return true
 end
 
+-- 目录大小在移入后才异步补写进 meta：快照时大小未知的条目，补写只改 size_bytes 与 meta 的 stat，
+-- 不算「条目已变」；原路径、移入时间仍从 meta 读出比对，meta 被换掉或删掉照样识别
 local function same_entry_snapshot(snapshot, entry)
-  return same_entry(snapshot.entry, entry)
+  local sizing = snapshot.entry.size_bytes == nil
+  return same_entry(snapshot.entry, entry, sizing)
     and same_stat(snapshot.trash_stat, stat_snapshot(entry.trash_path))
-    and same_stat(snapshot.meta_stat, stat_snapshot(entry.meta_path))
+    and (sizing or same_stat(snapshot.meta_stat, stat_snapshot(entry.meta_path)))
 end
 
 local function find_live_entry(store, snapshot)
@@ -157,6 +160,7 @@ function M.open(store, state)
   local extmarks = {}
   local entry_by_line = {}
   local name_columns = {}
+  local size_columns = {} -- 行号 → 大小列起始字节列（大小列在行尾，补写后原地替换）
 
   if #entries == 0 then
     local empty = '  Trash is empty'
@@ -209,6 +213,7 @@ function M.open(store, state)
       }
 
       local size_start = date_start + #date + 2
+      size_columns[#lines] = size_start
       extmarks[#extmarks + 1] = {
         row = row,
         col = size_start,
@@ -321,6 +326,35 @@ function M.open(store, state)
     })
   end)
 
+  -- 目录大小补写完成后原地替换该行的大小列，不重开面板（不打断确认框、不丢光标）
+  local function update_size(trash_path, bytes)
+    if not vim.api.nvim_buf_is_valid(buffer) then return end
+    for line, index in pairs(entry_by_line) do
+      local entry = entries[index]
+
+      if entry.trash_path == trash_path then
+        entry.size_bytes = bytes
+        local size = format_size(bytes)
+        local start = size_columns[line]
+        local text = vim.api.nvim_buf_get_lines(buffer, line - 1, line, false)[1] or ''
+
+        vim.bo[buffer].modifiable = true
+        vim.api.nvim_buf_set_text(buffer, line - 1, start, line - 1, #text, { size })
+        vim.bo[buffer].modifiable = false
+
+        pcall(vim.api.nvim_buf_set_extmark, buffer, namespace, line - 1, start, {
+          end_col = start + #size,
+          hl_group = 'VVTrashSize',
+        })
+        return
+      end
+    end
+  end
+
+  local unsubscribe_size = store:on_size(update_size)
+  -- 上次扫描中途退出 Neovim 的条目没有大小，打开面板时补跑
+  store:ensure_sizes(entries)
+
   -- 面板可以被 q / <Esc> / :q / 关窗等多条路径关掉，只在 close() 里取消会漏；
   -- buffer 是 bufhidden=wipe，BufWipeout 覆盖全部路径
   vim.api.nvim_create_autocmd('BufWipeout', {
@@ -329,6 +363,7 @@ function M.open(store, state)
     callback = function()
       cancel_confirmation()
       size_scan.cancel()
+      unsubscribe_size()
     end,
     desc = 'vv-explorer: cancel trash size scan',
   })

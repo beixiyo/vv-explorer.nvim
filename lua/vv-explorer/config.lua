@@ -50,7 +50,7 @@ local M = {}
 ---@field position 'left'|'right' @default 'left'
 ---@field width integer @default 32
 ---@field state VVStateHandle? 持久状态容器；默认注册 `vv-explorer/panel`
----@field persist_open boolean 跨 Neovim 会话恢复上次的打开状态 @default true
+---@field persist_open boolean 跨 Neovim 会话恢复上次的打开状态 @default false
 ---@field hidden boolean 显示 dotfile（`.` 开头） @default false
 ---@field group_empty_dirs boolean 单链 dir 合并显示 @default true
 ---@field preview boolean VSCode 风单击预览 @default true
@@ -70,6 +70,7 @@ local M = {}
 ---@field execute VVExplorerExecuteConfig|boolean `X` 按文件类型执行光标文件 @default { enabled = true, confirm = true, opts = {} }
 ---@field trash VVExplorerTrashConfig|boolean @default { enabled = true, max_items = 5000, warn_size_mb = 500, scan_on_open = true }
 ---@field clipboard VVExplorerClipboardConfig 跨 Neovim 实例共享的文件剪贴板 @default { conflict = 'prompt' }
+---@field yank_notify boolean `Y` / 右键复制路径成功后是否 notify；剪贴板写入失败由 Neovim 照常报错，不受影响 @default false
 ---@field select_move_down boolean 多选时 Tab 切换选中后自动将光标下移一行 @default true
 ---@field lsp_rename_timeout_ms integer rename 与本实例 cut 粘贴时 willRenameFiles 请求的超时毫秒数（cut 粘贴整批只发一次请求，只计时一次），超时后继续执行文件移动 @default 5000
 ---@field global_mappings VVExplorerGlobalMappings|false 全局快捷键（整个 nvim 范围）；设 false 禁用所有 @default { toggle = '<leader>E', reveal = '<leader>e' }
@@ -87,7 +88,7 @@ local defaults = {
   position = 'left',
   width = 32,
   state = nil,
-  persist_open = true,
+  persist_open = false,
   hidden = false,
   group_empty_dirs = true,
   preview = true,
@@ -96,6 +97,7 @@ local defaults = {
   follow_file = true,
   follow_file_debounce_ms = 0,
   select_move_down = true,
+  yank_notify = false,
   lsp_rename_timeout_ms = 5000,
   cwd = nil,
   sync_cwd_on_cd = 'tab',
@@ -170,6 +172,8 @@ local defaults = {
       if node and node.is_dir then Actions.open(state) end
     end,
     ['<RightMouse>'] = function(state)
+      -- 焦点在面板时右键点别的窗口也会先进这里：交还给鼠标所在窗口，否则会复制错误行的路径
+      if require('vv-utils.mouse').redispatch_outside(state.win, '<RightMouse>') then return end
       local pos = vim.fn.getmousepos()
       if pos.line > 0 then
         pcall(vim.api.nvim_win_set_cursor, state.win, { pos.line, 0 })
@@ -233,6 +237,10 @@ function M.resolve(opts)
   local conflict = config.clipboard and config.clipboard.conflict
   if conflict ~= 'prompt' and conflict ~= 'overwrite' and conflict ~= 'increment' then
     error("vv-explorer: clipboard.conflict must be 'prompt', 'overwrite', or 'increment'")
+  end
+
+  if type(config.yank_notify) ~= 'boolean' then
+    error('vv-explorer: yank_notify must be a boolean')
   end
 
   ---@cast config VVExplorerResolvedConfig
